@@ -50,7 +50,7 @@ namespace CrossChainContract
             if (operation == "CrossChain")// 发起跨链交易
             {
                 if (!CheckProxyRegisted(caller)) return false;
-                return CrossChain((BigInteger)args[0], (byte[])args[1], (byte[])args[2], (byte[])args[3]);
+                return CrossChain((BigInteger)args[0], (byte[])args[1], (byte[])args[2], (byte[])args[3], caller);
             }
             else if (operation == "SyncBlockHeader") //同步区块头
             {
@@ -258,7 +258,7 @@ namespace CrossChainContract
             return true;
         }
 
-        public static bool CrossChain(BigInteger toChainID, byte[] toChainAddress, byte[] functionName, byte[] args)
+        public static bool CrossChain(BigInteger toChainID, byte[] toChainAddress, byte[] functionName, byte[] args, byte[] caller)
         {
             var tx = (Transaction)ExecutionEngine.ScriptContainer;
 
@@ -272,13 +272,13 @@ namespace CrossChainContract
                 txHash = tx.Hash,
                 //sha256(此合约地址, 交易id)
                 crossChainID = SmartContract.Sha256(ExecutionEngine.ExecutingScriptHash.Concat(tx.Hash)),
-                fromContract = ExecutionEngine.CallingScriptHash
+                fromContract = caller
             };
             var requestId = getRequestID(toChainID);
             var resquestKey = putRequest(toChainID, requestId, para);
 
             //发出跨链事件
-            CrossChainEvent(tx.Hash, para.txHash, ExecutionEngine.ExecutingScriptHash, para.toChainID, para.toContract, WriteCrossChainTxParameter(para), resquestKey);
+            CrossChainEvent(tx.Hash, para.txHash, caller , para.toChainID, para.toContract, WriteCrossChainTxParameter(para), resquestKey);
             return true;
         }
 
@@ -590,15 +590,12 @@ namespace CrossChainContract
 
         private static bool ExecuteCrossChainTx(ToMerkleValue value)
         {
-            Runtime.Notify("Start to execute cross chain tx");
             if (value.TxParam.toContract.Length == 20)
             {
                 DyncCall TargetContract = (DyncCall)value.TxParam.toContract.ToDelegate();
-                object[] parameter = DeserializeArgs(value.TxParam.args);
-                Runtime.Notify("Parameters deserialize success.");
+                object[] parameter = new object[] { value.TxParam.args,  value.TxParam.fromContract, value.fromChainID};
                 if (TargetContract(value.TxParam.method.AsString(), parameter) is null)
                 {
-                    Runtime.Notify("Dynamic call fail");
                     return false;
                 }
                 else
