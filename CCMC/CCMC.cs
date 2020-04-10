@@ -590,12 +590,15 @@ namespace CrossChainContract
 
         private static bool ExecuteCrossChainTx(ToMerkleValue value)
         {
+            Runtime.Notify("Start to execute cross chain tx");
             if (value.TxParam.toContract.Length == 20)
             {
                 DyncCall TargetContract = (DyncCall)value.TxParam.toContract.ToDelegate();
-                object[] parameter = new object[] { value.TxParam.args };
+                object[] parameter = DeserializeArgs(value.TxParam.args);
+                Runtime.Notify("Parameters deserialize success.");
                 if (TargetContract(value.TxParam.method.AsString(), parameter) is null)
                 {
+                    Runtime.Notify("Dynamic call fail");
                     return false;
                 }
                 else
@@ -653,42 +656,35 @@ namespace CrossChainContract
         {
             CrossChainTxParameter txParameter = new CrossChainTxParameter();
             //获取txHash
-            Runtime.Notify(offset);
             var temp = ReadVarBytes(Source, offset);
             txParameter.txHash = (byte[])temp[0];
             offset = (int)temp[1];
 
             //获取crossChainId
-            Runtime.Notify(offset);
             temp = ReadVarBytes(Source, offset);
             txParameter.crossChainID = (byte[])temp[0];
             offset = (int)temp[1];
 
             //获取fromContract
-            Runtime.Notify(offset);
             temp = ReadVarBytes(Source, offset);
             txParameter.fromContract = (byte[])temp[0];
             offset = (int)temp[1];
 
             //获取toChainID
-            Runtime.Notify(offset);
             txParameter.toChainID = Source.Range(offset, 8).ToBigInteger();
             offset = offset + 8;
 
             //获取toContract
-            Runtime.Notify(offset);
             temp = ReadVarBytes(Source, offset);
             txParameter.toContract = (byte[])temp[0];
             offset = (int)temp[1];
 
             //获取method
-            Runtime.Notify(offset);
             temp = ReadVarBytes(Source, offset);
             txParameter.method = (byte[])temp[0];
             offset = (int)temp[1];
 
             //获取参数
-            Runtime.Notify(offset);
             temp = ReadVarBytes(Source, offset);
             txParameter.args = (byte[])temp[0];
             offset = (int)temp[1];
@@ -755,6 +751,21 @@ namespace CrossChainContract
         {
             byte[] prefix = { 0x00 };
             return SmartContract.Sha256(prefix.Concat(value));
+        }
+
+        public static object[] DeserializeArgs(byte[] buffer)
+        {
+            var offset = 0;
+            var res = ReadVarBytes(buffer, offset);
+            var assetAddress = res[0];
+
+            res = ReadVarBytes(buffer, (int)res[1]);
+            var toAddress = res[0];
+
+            res = ReadVarInt(buffer, (int)res[1]);
+            var amount = res[0];
+
+            return new object[] { assetAddress, toAddress, amount };
         }
 
         private static byte[] WriteUint16(BigInteger value, byte[] Source)
