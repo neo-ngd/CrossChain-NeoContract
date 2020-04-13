@@ -534,7 +534,7 @@ namespace CrossChainContract
         {
             for (int i = 0; i < keepers.Length; i++)
             {
-                if ((byte[])keepers[i] == pubkey)
+                if (((byte[])keepers[i]).Equals(pubkey))
                 {
                     return true;
                 }
