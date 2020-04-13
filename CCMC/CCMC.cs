@@ -173,7 +173,7 @@ namespace CrossChainContract
 
         public static bool VerifyAndExecuteTx(byte[] proof, BigInteger blockHeight)
         {
-            BigInteger latestHeight = Storage.Get(latestHeightPrefix).AsBigInteger();
+            BigInteger latestHeight = Storage.Get(latestHeightPrefix).ToBigInteger();
             if (blockHeight > latestHeight)
             {
                 Runtime.Notify("blockHeight > LatestHeight!");
@@ -200,7 +200,7 @@ namespace CrossChainContract
             }
             ToMerkleValue merkleValue = deserializMerkleValue(CrossChainParams);
             //通过参数中的txid查看交易是否已经被执行过
-            if (Storage.Get(transactionPrefix.Concat(merkleValue.txHash)).AsBigInteger() == 1)
+            if (Storage.Get(transactionPrefix.Concat(merkleValue.txHash)).ToBigInteger() == 1)
             {
                 Runtime.Notify("Transaction has been executed");
                 return false;
@@ -242,7 +242,7 @@ namespace CrossChainContract
             }
             ToMerkleValue merkleValue = deserializMerkleValue(CrossChainParams);
             //通过参数中的txid查看交易是否已经被执行过
-            if (Storage.Get(transactionPrefix.Concat(merkleValue.txHash)).AsBigInteger() == 1)
+            if (Storage.Get(transactionPrefix.Concat(merkleValue.txHash)).ToBigInteger() == 1)
             {
                 Runtime.Notify("Transaction has been executed");
                 return false;
@@ -303,7 +303,7 @@ namespace CrossChainContract
                 return true;
             }
             object[] McPubKeys;
-            BigInteger latestBookKeeperHeight = Storage.Get(latestBookKeeperHeightPrefix).AsBigInteger();
+            BigInteger latestBookKeeperHeight = Storage.Get(latestBookKeeperHeightPrefix).ToBigInteger();
             BigInteger targetBlockHeight;
             if (header.height >= latestBookKeeperHeight)
             {
@@ -324,7 +324,7 @@ namespace CrossChainContract
             }
             MCBlockHeaders[header.height] = header;
             Storage.Put(mCBlockHeadersPrefix, MCBlockHeaders.Serialize());
-            if (header.height > Storage.Get(latestHeightPrefix).AsBigInteger())
+            if (header.height > Storage.Get(latestHeightPrefix).ToBigInteger())
             {
                 Storage.Put(latestHeightPrefix, header.height);
             }
@@ -491,7 +491,7 @@ namespace CrossChainContract
             byte b = 0x03;
             byte[] newkey = key.Range(0, 35);
             byte[] point = key.Range(66, 1);
-            if (point.AsBigInteger() % 2 == 0)
+            if (point.ToBigInteger() % 2 == 0)
             {
                 newkey[index] = a;
             }
@@ -511,7 +511,7 @@ namespace CrossChainContract
                 byte[] r = (signList.Range(i * MCCHAIN_SIGNATURE_LEN, 32));
                 byte[] s = (signList.Range(i * MCCHAIN_SIGNATURE_LEN + 32, 32));
                 int index = i * MCCHAIN_SIGNATURE_LEN + 64;
-                BigInteger v = signList.Range(index, 1).AsBigInteger();
+                BigInteger v = signList.Range(index, 1).ToBigInteger();
                 byte[] signer;
                 if (v == 1)
                 {
@@ -616,7 +616,7 @@ namespace CrossChainContract
             byte[] requestID = Storage.Get(requestIDPrefix.Concat(chainID.ToByteArray()));
             if (requestID != null)
             {
-                return requestID.AsBigInteger();
+                return requestID.ToBigInteger();
             }
             return 0;
         }
@@ -641,7 +641,7 @@ namespace CrossChainContract
             offset = (int)temp[1];
 
             //获取fromChainID, Uint64
-            result.fromChainID = Source.Range(offset, 8).AsBigInteger();
+            result.fromChainID = Source.Range(offset, 8).ToBigInteger();
             offset = offset + 8;
 
             //获取CrossChainTxParameter
