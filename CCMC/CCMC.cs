@@ -504,6 +504,7 @@ namespace CrossChainContract
 
         private static bool verifySig(byte[] rawHeader, byte[] signList, object[] keepers, int m)
         {
+            Runtime.Notify(signList);
             byte[] hash = (SmartContract.Hash256(rawHeader));
             int signed = 0;
             for (int i = 0; i < signList.Length / MCCHAIN_SIGNATURE_LEN; i++)
