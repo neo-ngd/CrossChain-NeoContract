@@ -521,6 +521,7 @@ namespace CrossChainContract
                 {
                     signer = Keccak256(Ecrecover(r, s, true, Keccak256(hash)));
                 }
+                Runtime.Notify(signer);
                 if (containsAddress(keepers, signer))
                 {
                     signed += 1;
