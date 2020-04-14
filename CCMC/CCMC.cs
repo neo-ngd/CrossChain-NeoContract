@@ -316,7 +316,7 @@ namespace CrossChainContract
             }
             McPubKeys = ((Map<BigInteger, object[]>)Storage.Get(mCKeeperPubKeysPrefix).Deserialize())[targetBlockHeight];
             int n = McPubKeys.Length;
-            int m = n - (2 * n - 1) / 3;
+            int m = n - (n - 1) / 3;
             if (!verifySig(rawHeader, signList, McPubKeys, m))
             {
                 Runtime.Notify("Verify header signature failed!");
@@ -355,7 +355,7 @@ namespace CrossChainContract
             BigInteger latestBookKeeperHeight = Storage.Get(latestBookKeeperHeightPrefix).AsBigInteger();
             object[] McPubKeys = MCKeeperPubKeys[latestBookKeeperHeight];
             int n = McPubKeys.Length;
-            int m = n - (2 * n - 1) / 3;
+            int m = n - (n - 1) / 3;
 
             if (!verifySig(rawHeader, signList, McPubKeys, m))
             {
