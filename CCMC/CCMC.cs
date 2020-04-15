@@ -49,7 +49,6 @@ namespace CrossChainContract
             byte[] caller = ExecutionEngine.CallingScriptHash;
             if (operation == "CrossChain")// 发起跨链交易
             {
-                if (!CheckProxyRegisted(caller)) return false;
                 return CrossChain((BigInteger)args[0], (byte[])args[1], (byte[])args[2], (byte[])args[3], caller);
             }
             else if (operation == "SyncBlockHeader") //同步区块头
