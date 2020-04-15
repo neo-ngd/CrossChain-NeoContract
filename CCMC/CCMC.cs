@@ -208,17 +208,17 @@ namespace CrossChainContract
             //TODO: 确定Neo的跨链ID 并写死(暂定neo id 为4, 后面根据实际情况修改)
             if (merkleValue.TxParam.toChainID != 4)
             {
-                Runtime.Notify("非Neo跨链交易");
+                Runtime.Notify("Not Neo crosschain tx");
                 return false;
             }
             //执行跨链交易
             if (ExecuteCrossChainTx(merkleValue))
             {
-                Runtime.Notify("跨链交易执行成功");
+                Runtime.Notify("Tx execute success");
             }
             else
             {
-                Runtime.Notify("跨链交易执行失败");
+                Runtime.Notify("Tx execute fail");
             }
 
             //发出事件
@@ -250,7 +250,7 @@ namespace CrossChainContract
             //TODO: 确定Neo的跨链ID 并写死(暂定neo id 为4, 后面根据实际情况修改)
             if (merkleValue.TxParam.toChainID != 4)
             {
-                Runtime.Notify("非Neo跨链交易");
+                Runtime.Notify("Not Neo crosschain tx");
                 return false;
             }
             Runtime.Notify("proof and root are correct");
