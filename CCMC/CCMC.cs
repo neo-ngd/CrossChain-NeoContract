@@ -889,10 +889,10 @@ namespace CrossChainContract
             }
         }
 
-        [Syscall("Neo.CrossChain.Ecrecover")]
+        [Syscall("Neo.Cryptography.Ecrecover")]
         public static extern byte[] Ecrecover(byte[] r, byte[] s, bool v, byte[] message);
 
-        [Syscall("Neo.CrossChain.Keccak256")]
+        [Syscall("Neo.Cryptography.Keccak256")]
         public static extern byte[] Keccak256(byte[] message);
 
     }
