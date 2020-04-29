@@ -471,7 +471,7 @@ namespace CrossChainContract
             for (int i = 0; i < keyLength; i++)
             {
                 buff = WriteVarBytes(buff, compressMCPubKey(pubKeyList.Range(i * MCCHAIN_PUBKEY_LEN, MCCHAIN_PUBKEY_LEN)));
-                byte[] hash = bytesToBytes32(Keccak256((pubKeyList.Range(i * MCCHAIN_PUBKEY_LEN, MCCHAIN_PUBKEY_LEN).Range(3, 64))));
+                byte[] hash = bytesToBytes32(SmartContract.Hash256((pubKeyList.Range(i * MCCHAIN_PUBKEY_LEN, MCCHAIN_PUBKEY_LEN).Range(3, 64))));
                 keepers[i] = hash;
             }
             BookKeeper bookKeeper = new BookKeeper();
@@ -515,11 +515,11 @@ namespace CrossChainContract
                 byte[] signer;
                 if (v == 1)
                 {
-                    signer = Keccak256(Ecrecover(r, s, false, Keccak256(hash)));
+                    signer = SmartContract.Hash256(Ecrecover(r, s, false, SmartContract.Hash256(hash)));
                 }
                 else
                 {
-                    signer = Keccak256(Ecrecover(r, s, true, Keccak256(hash)));
+                    signer = SmartContract.Hash256(Ecrecover(r, s, true, SmartContract.Hash256(hash)));
                 }
                 Runtime.Notify(signer);
                 if (containsAddress(keepers, signer))
@@ -891,10 +891,6 @@ namespace CrossChainContract
 
         [Syscall("Neo.Cryptography.Ecrecover")]
         public static extern byte[] Ecrecover(byte[] r, byte[] s, bool v, byte[] message);
-
-        [Syscall("Neo.Cryptography.Keccak256")]
-        public static extern byte[] Keccak256(byte[] message);
-
     }
     public struct ToMerkleValue
     {
