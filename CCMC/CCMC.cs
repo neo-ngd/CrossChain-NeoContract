@@ -480,7 +480,7 @@ namespace CrossChainContract
             for (int i = 0; i < keyLength; i++)
             {
                 buff = WriteVarBytes(buff, compressMCPubKey(pubKeyList.Range(i * MCCHAIN_PUBKEY_LEN, MCCHAIN_PUBKEY_LEN)));
-                byte[] hash = bytesToBytes32(SmartContract.Hash256((pubKeyList.Range(i * MCCHAIN_PUBKEY_LEN, MCCHAIN_PUBKEY_LEN).Range(3, 64))));
+                byte[] hash = bytesToBytes32(SmartContract.Sha256((pubKeyList.Range(i * MCCHAIN_PUBKEY_LEN, MCCHAIN_PUBKEY_LEN).Range(3, 64))));
                 keepers[i] = hash;
             }
             BookKeeper bookKeeper = new BookKeeper();
