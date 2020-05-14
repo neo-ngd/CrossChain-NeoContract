@@ -524,11 +524,11 @@ namespace CrossChainContract
                 byte[] signer;
                 if (v == 1)
                 {
-                    signer = SmartContract.Hash256(Ecrecover(r, s, false, SmartContract.Hash256(hash)));
+                    signer = SmartContract.Sha256(Ecrecover(r, s, false, SmartContract.Sha256(hash)));
                 }
                 else
                 {
-                    signer = SmartContract.Hash256(Ecrecover(r, s, true, SmartContract.Hash256(hash)));
+                    signer = SmartContract.Sha256(Ecrecover(r, s, true, SmartContract.Sha256(hash)));
                 }
                 Runtime.Notify(signer);
                 if (containsAddress(keepers, signer))
