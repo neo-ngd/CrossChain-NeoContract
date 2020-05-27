@@ -297,7 +297,7 @@ namespace CrossChainContract
                 return false;
             }
             object[] keepers;
-            BigInteger latestBookKeeperHeight = Storage.Get(latestBookKeeperHeightPrefix).Concat(new byte[] { 0x00 }).AsBigInteger();
+            BigInteger latestBookKeeperHeight = Storage.Get(latestBookKeeperHeightPrefix).ToBigInteger();
             BigInteger targetBlockHeight;
             if (header.height > latestBookKeeperHeight)
             {
