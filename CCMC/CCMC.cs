@@ -206,7 +206,7 @@ namespace CrossChainContract
                 return false;
             }
             //TODO: 确定Neo的跨链ID 并写死(暂定neo id 为4, 后面根据实际情况修改)
-            if (merkleValue.TxParam.toChainID != 4)
+            if (merkleValue.TxParam.toChainID != 2)
             {
                 Runtime.Notify("Not Neo crosschain tx");
                 return false;
