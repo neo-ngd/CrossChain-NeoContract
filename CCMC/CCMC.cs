@@ -296,28 +296,23 @@ namespace CrossChainContract
                 Runtime.Notify("block height should > 0");
                 return false;
             }
-
-            byte[] key = mCBlockHeadersPrefix;
-            key = key.Concat(header.height.AsByteArray());
-            byte[] storedRawHeader = Storage.Get(key);
-            if (!storedRawHeader.Equals(new byte[0]))
-            {
-                //表示已经同步过此高度
-                return true;
-            }
             object[] keepers;
-            BigInteger latestBookKeeperHeight = Storage.Get(latestBookKeeperHeightPrefix).AsBigInteger();
+            BigInteger latestBookKeeperHeight = Storage.Get(latestBookKeeperHeightPrefix).Concat(new byte[] { 0x00 }).AsBigInteger();
             BigInteger targetBlockHeight;
-            if (header.height >= latestBookKeeperHeight)
+            if (header.height > latestBookKeeperHeight)
             {
                 targetBlockHeight = latestBookKeeperHeight;
             }
+            else if (header.height == latestBookKeeperHeight) 
+            {
+                return true;
+            }
             else
             {
-                Map<int, BigInteger> MCKeeperHeight = new Map<int, BigInteger>();
+                Map<BigInteger, BigInteger> MCKeeperHeight = new Map<BigInteger, BigInteger>();
                 targetBlockHeight = findBookKeeper(MCKeeperHeight.Keys.Length, header.height);
             }
-            keepers = (object[])Storage.Get(mCKeeperPubKeysPrefix.Concat(header.height.AsByteArray())).Deserialize();
+            keepers = (object[])Storage.Get(mCKeeperPubKeysPrefix.Concat(targetBlockHeight.ToByteArray())).Deserialize();
             int n = keepers.Length;
             int m = n - (n - 1) / 3;
             if (!verifySig(rawHeader, signList, keepers, m))
@@ -325,8 +320,8 @@ namespace CrossChainContract
                 Runtime.Notify("Verify header signature failed!");
                 return false;
             }
-            Storage.Put(mCBlockHeadersPrefix.Concat(header.height.AsByteArray()), rawHeader);
-            if (header.height > Storage.Get(latestHeightPrefix).AsBigInteger())
+            Storage.Put(mCBlockHeadersPrefix.Concat(header.height.ToByteArray()), rawHeader);
+            if (header.height > Storage.Get(latestHeightPrefix).Concat(new byte[] { 0x00 }).AsBigInteger())
             {
                 Storage.Put(latestHeightPrefix, header.height);
             }
@@ -353,7 +348,7 @@ namespace CrossChainContract
                 return false;
             }
 
-            BigInteger latestBookKeeperHeight = Storage.Get(latestBookKeeperHeightPrefix).AsBigInteger();
+            BigInteger latestBookKeeperHeight = Storage.Get(latestBookKeeperHeightPrefix).Concat(new byte[] { 0x00 }).AsBigInteger();
             object[] keepers = (byte[][])Storage.Get(mCKeeperPubKeysPrefix.Concat(latestBookKeeperHeight.ToByteArray())).Deserialize();
             int n = keepers.Length;
             int m = n - (n - 1) / 3;
@@ -373,14 +368,14 @@ namespace CrossChainContract
             //更新共识公钥高度
             Storage.Put(latestBookKeeperHeightPrefix, header.height);
             //存放完整区块头
-            Storage.Put(mCBlockHeadersPrefix.Concat(header.height.AsByteArray()), rawHeader);
+            Storage.Put(mCBlockHeadersPrefix.Concat(header.height.ToByteArray()), rawHeader);
             //更新关键区块头高度
             Map<BigInteger, BigInteger> MCKeeperHeight = (Map<BigInteger, BigInteger>)Storage.Get(mCKeeperHeightPrefix).Deserialize();
             MCKeeperHeight[MCKeeperHeight.Keys.Length] = header.height;
             MCKeeperHeight = RemoveOutdateHeight(MCKeeperHeight);
             Storage.Put(mCKeeperHeightPrefix, MCKeeperHeight.Serialize());
             //更新关键区块头公钥
-            Storage.Put(mCKeeperPubKeysPrefix, bookKeeper.keepers.Serialize());
+            Storage.Put(mCKeeperPubKeysPrefix.Concat(header.height.ToByteArray()), bookKeeper.keepers.Serialize());
             //触发关键区块头事件
             ChangeBookKeeperEvent(header.height, rawHeader);
             return true;
@@ -390,7 +385,7 @@ namespace CrossChainContract
         {
             foreach (BigInteger key in MCKeeperHeight.Keys) 
             {
-                if (MCKeeperHeight.Keys.Length > 50)
+                if (MCKeeperHeight.Keys.Length > 10)
                 {
                     MCKeeperHeight.Remove(key);
                 }
@@ -432,7 +427,7 @@ namespace CrossChainContract
             MCKeeperHeight[0] = header.height;
             Storage.Put(mCKeeperHeightPrefix, MCKeeperHeight.Serialize());
             //存放关键区块头公钥
-            Storage.Put(mCKeeperPubKeysPrefix.Concat(header.height.AsByteArray()), bookKeeper.keepers.Serialize());
+            Storage.Put(mCKeeperPubKeysPrefix.Concat(header.height.ToByteArray()), bookKeeper.keepers.Serialize());
             //触发创世区块事件
             InitGenesisBlockEvent(header.height, rawHeader);
             return true;
@@ -444,8 +439,8 @@ namespace CrossChainContract
             {
                 return 0;
             }
-            Map<int, BigInteger> MCKeeperHeight = new Map<int, BigInteger>();
-            MCKeeperHeight = (Map<int, BigInteger>)Storage.Get(mCKeeperHeightPrefix).Deserialize();
+            Map<BigInteger, BigInteger> MCKeeperHeight = new Map<BigInteger, BigInteger>();
+            MCKeeperHeight = (Map<BigInteger, BigInteger>)Storage.Get(mCKeeperHeightPrefix).Deserialize();
             for (int i = mcKeeperHeightLength; i >= 0; i--)
             {
                 if (MCKeeperHeight[i] > height)
@@ -454,7 +449,7 @@ namespace CrossChainContract
                 }
                 else
                 {
-                    return MCKeeperHeight[i];
+                    return MCKeeperHeight[i+1];
                 }
             }
             return 0;
