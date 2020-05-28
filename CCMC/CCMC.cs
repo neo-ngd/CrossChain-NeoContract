@@ -299,7 +299,6 @@ namespace CrossChainContract
             byte[][] keepers;
             BigInteger latestBookKeeperHeight = Storage.Get(latestBookKeeperHeightPrefix).ToBigInteger();
             BigInteger targetBlockHeight;
-            Runtime.Notify("302");
             if (header.height > latestBookKeeperHeight)
             {
                 targetBlockHeight = latestBookKeeperHeight;
@@ -313,23 +312,19 @@ namespace CrossChainContract
                 Map<BigInteger, BigInteger> MCKeeperHeight = new Map<BigInteger, BigInteger>();
                 targetBlockHeight = findBookKeeper(MCKeeperHeight.Keys.Length, header.height);
             }
-            Runtime.Notify("316");
             keepers = (byte[][])Storage.Get(mCKeeperPubKeysPrefix.Concat(targetBlockHeight.AsByteArray())).Deserialize();
             int n = keepers.Length;
             int m = n - (n - 1) / 3;
-            Runtime.Notify("320");
             if (!verifySig(rawHeader, signList, keepers, m))
             {
                 Runtime.Notify("Verify header signature failed!");
                 return false;
             }
-            Runtime.Notify("326");
             Storage.Put(mCBlockHeadersPrefix.Concat(header.height.AsByteArray()), rawHeader);
             if (header.height > Storage.Get(latestHeightPrefix).ToBigInteger())
             {
                 Storage.Put(latestHeightPrefix, header.height);
             }
-            Runtime.Notify("332");
             SyncBlockHeaderEvent(header.height, rawHeader);
             return true;
         }
@@ -518,14 +513,12 @@ namespace CrossChainContract
             byte[] hash = SmartContract.Hash256(rawHeader);
             Runtime.Notify(hash);
             int signed = 0;
-            Runtime.Notify("521");
             for (int i = 0; i < signList.Length / MCCHAIN_SIGNATURE_LEN; i++)
             {
                 byte[] r = (signList.Range(i * MCCHAIN_SIGNATURE_LEN, 32));
                 byte[] s = (signList.Range(i * MCCHAIN_SIGNATURE_LEN + 32, 32));
                 int index = i * MCCHAIN_SIGNATURE_LEN + 64;
                 BigInteger v = signList.Range(index, 1).ToBigInteger();
-                Runtime.Notify("528");
                 byte[] signer;
                 if (v == 1)
                 {
@@ -535,7 +528,6 @@ namespace CrossChainContract
                 {
                     signer = SmartContract.Sha256(Secp256k1Recover(r, s, true, SmartContract.Sha256(hash)));
                 }
-                Runtime.Notify("538");
                 if (containsAddress(keepers, signer))
                 {
                     signed += 1;
@@ -547,7 +539,6 @@ namespace CrossChainContract
 
         private static bool containsAddress(object[] keepers, byte[] pubkey)
         {
-            Runtime.Notify("550");
             for (int i = 0; i < keepers.Length; i++)
             {
                 if (keepers[i].Equals(pubkey))
