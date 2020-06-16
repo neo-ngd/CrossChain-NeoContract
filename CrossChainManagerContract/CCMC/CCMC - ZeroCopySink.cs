@@ -19,6 +19,11 @@ namespace CrossChainManagerContract.CCMC
             return value;
         }
 
+        public static byte[] WriteVarBytes(byte[] source, byte[] target)
+        {
+            return WriteVarInt(target.Length, source).Concat(target);
+        }
+
         public static byte[] WriteUint16(BigInteger value, byte[] Source)
         {
             return Source.Concat(PadRight(value.ToByteArray(), 2));
