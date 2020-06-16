@@ -12,6 +12,19 @@ namespace CrossChainManagerContract.CCMC
         {
             public byte[] txHash;
             public BigInteger fromChainID;
+            public CrossChainTxParameter TxParam;
+        }
+
+        public static ToMerkleValue deserializeMerkleValue(byte[] source)
+        {
+            ToMerkleValue result = new ToMerkleValue();
+            int offset = 0;
+
+            (result.txHash, offset) = ReadVarBytes(source, offset);
+            result.fromChainID = source.Range(offset, 8).ToBigInteger();
+            offset += 8;
+            result.TxParam = deserializeCrossChainTxParameter(source, offset);
+            return result;
         }
 
         public struct BookKeeper
@@ -45,6 +58,46 @@ namespace CrossChainManagerContract.CCMC
             public byte[] txHash;
             public byte[] crossChainId;
             public byte[] fromContract;
+        }
+
+        public static byte[] WriteCrossChainTxParameter(CrossChainTxParameter para)
+        {
+            byte[] result = new byte[] { };
+            result = WriteVarBytes(result, para.txHash);
+            result = WriteVarBytes(result, para.crossChainId);
+            result = WriteVarBytes(result, para.fromContract);
+            result = WriteVarBytes(result, PadRight(para.toChainId.ToByteArray(), 8));
+            result = WriteVarBytes(result, para.toContract);
+            result = WriteVarBytes(result, para.method);
+            result = WriteVarBytes(result, para.args);
+            return result;
+        }
+
+        public static CrossChainTxParameter deserializeCrossChainTxParameter(byte[] source, int offset)
+        {
+            CrossChainTxParameter txParameter = new CrossChainTxParameter();
+            //get txHash
+            (txParameter.txHash, offset) = ReadVarBytes(source, offset);
+
+            //get crossChainId
+            (txParameter.crossChainId, offset) = ReadVarBytes(source, offset);
+
+            //get fromContract
+            (txParameter.fromContract, offset) = ReadVarBytes(source, offset);
+
+            //get toChainID
+            txParameter.toChainId = source.Range(offset, 8).ToBigInteger();
+            offset += 8;
+
+            //get toContract
+            (txParameter.toContract, offset) = ReadVarBytes(source, offset);
+
+            //get method
+            (txParameter.method, offset) = ReadVarBytes(source, offset);
+
+            //get method parameters
+            (txParameter.args, offset) = ReadVarBytes(source, offset);
+            return txParameter;
         }
     }
 }
