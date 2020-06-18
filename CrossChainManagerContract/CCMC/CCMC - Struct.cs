@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Numerics;
 using System.Text;
 using Neo.SmartContract.Framework;
+using Neo.SmartContract.Framework.Services.Neo;
 
 namespace CrossChainManagerContract.CCMC
 {
@@ -46,6 +47,58 @@ namespace CrossChainManagerContract.CCMC
             public BigInteger ConsensusData;
             public byte[] consensusPayload;
             public byte[] nextBookKeeper;
+        }
+
+        public static Header deserializeHeader(byte[] source)
+        {
+            Header header = new Header();
+            int offset = 0;
+            try
+            {
+                //get version
+                header.version = source.Range(offset, 4).ToBigInteger();
+                offset += 4;
+
+                //get chainID
+                header.chainId = source.Range(offset, 8).ToBigInteger();
+
+                //get prevBlockHash
+                (header.previousBlockHash, offset) = ReadHash(source, offset);
+
+                //get transactionRoot Hash
+                (header.transactionRoot, offset) = ReadHash(source, offset);
+
+                //get crossStatesRoot, Hash
+                (header.crossStatesRoot, offset) = ReadHash(source, offset);
+
+                //get blockRoot, Hash
+                (header.blockRoot, offset) = ReadHash(source, offset);
+
+                //get timeStamp
+                header.timeStampe = source.Range(offset, 4).ToBigInteger();
+                offset += 4;
+
+                //get height
+                header.height = source.Range(offset, 4).ToBigInteger();
+                offset += 4;
+
+                //get consensusData
+                header.ConsensusData = source.Range(offset, 8).ToBigInteger();
+                offset += 8;
+
+                //get consensusPayload
+                (header.consensusPayload, offset) = ReadVarBytes(source, offset);
+
+                //get nextBookKeeper
+                header.nextBookKeeper = source.Range(offset, 20);
+
+                return header;
+            }
+            catch
+            {
+                Runtime.Notify("deserializeHeader failed");
+                throw new Exception();
+            }
         }
 
         public struct CrossChainTxParameter

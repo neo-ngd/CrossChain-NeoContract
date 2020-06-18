@@ -46,11 +46,7 @@ namespace CrossChainManagerContract.CCMC
 
         public static BookKeeper GenerateBookKeeperByPubKey(byte[] pubKeyList)
         {
-            if (pubKeyList.Length % MCCHAIN_PUBKEY_LEN != 0)
-            {
-                Runtime.Notify("pubKeyList length illegal");
-                throw new ArgumentOutOfRangeException();
-            }
+            if (!CheckPubKey(pubKeyList)) throw new ArgumentOutOfRangeException();
             int n = pubKeyList.Length / MCCHAIN_PUBKEY_LEN;
             int m = n - (n - 1) / 3;
             return getBookKeeper(n, m, pubKeyList);
@@ -72,6 +68,19 @@ namespace CrossChainManagerContract.CCMC
             bookKeeper.nextBookKeeper = Hash160(buff);
             bookKeeper.keepers = keepers;
             return bookKeeper;
+        }
+
+        public static bool CheckPubKey(byte[] pubKeyList)
+        {
+            if (pubKeyList.Length % MCCHAIN_PUBKEY_LEN != 0)
+            {
+                Runtime.Notify("pubKeyList length illegal");
+                return false;
+            }
+            else
+            {
+                return true;
+            }
         }
 
         public static byte[] Hash256(byte[] source)

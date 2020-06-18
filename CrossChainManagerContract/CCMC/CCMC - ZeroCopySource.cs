@@ -1,5 +1,6 @@
 ﻿using System;
 using System.Collections.Generic;
+using System.Net.NetworkInformation;
 using System.Numerics;
 using System.Text;
 using Neo.SmartContract.Framework;
@@ -30,18 +31,31 @@ namespace CrossChainManagerContract.CCMC
             {
                 return (buffer.Range(offset, 8).ToBigInteger(), offset + 8);
             }
-            else 
+            else
             {
                 return (firstByte.ToBigInteger(), offset);
             }
         }
 
-        public static (byte[], int) ReadVarBytes(byte[] buffer, int offset) 
+        public static (byte[], int) ReadVarBytes(byte[] buffer, int offset)
         {
             BigInteger count;
             (count, offset) = ReadVarInt(buffer, offset);
             int length = (int)count;
             return ReadBytes(buffer, offset, length);
+        }
+
+        public static (byte[], int) ReadHash(byte[] source, int offset)
+        {
+
+            if (offset + 32 <= source.Length)
+            {
+                return (source.Range(offset, 32), offset + 32);
+            }
+            else 
+            {
+                throw new ArgumentOutOfRangeException();
+            }            
         }
     }
 }
