@@ -34,10 +34,10 @@ namespace CrossChainContract
         delegate object DyncCall(string method, object[] args);
 
         //------------------------------event--------------------------------
-        //CrossChainEvent tx.origin, param.txHash, _token, _toChainId, _toContract, rawParam, requestKey
-        public static event Action<byte[], byte[], byte[], BigInteger, byte[], byte[], byte[]> CrossChainEvent;
-        //CrossChainTxEvent fromChainID, TxParam.toContract, txHash, TxPara.txHash
-        public static event Action<BigInteger, byte[], byte[], byte[]> VerifyAndExecuteTxEvent;
+        //CrossChainLockEvent "from address" "from contract" "to chain id" "key" "tx param"
+        public static event Action<byte[], byte[], BigInteger, byte[], byte[]> CrossChainLockEvent;
+        //CrossChainUnlockEvent fromChainID, TxParam.toContract, txHash
+        public static event Action<BigInteger, byte[], byte[]> CrossChainUnlockEvent;
         //Sync Genesis Header Event Height, rawHeaders
         public static event Action<BigInteger, byte[]> InitGenesisBlockEvent;
         //更换联盟链公式
@@ -222,11 +222,7 @@ namespace CrossChainContract
             }
 
             //发出事件
-            VerifyAndExecuteTxEvent
-                (merkleValue.fromChainID,
-                merkleValue.TxParam.toContract,
-                merkleValue.txHash,
-                merkleValue.TxParam.txHash);
+            CrossChainUnlockEvent(merkleValue.fromChainID, merkleValue.TxParam.toContract, merkleValue.txHash);
 
             return true;
         }
@@ -278,7 +274,7 @@ namespace CrossChainContract
             var resquestKey = putRequest(toChainID, requestId, para);
 
             //发出跨链事件
-            CrossChainEvent(tx.Hash, para.txHash, caller , para.toChainID, para.toContract, WriteCrossChainTxParameter(para), resquestKey);
+            CrossChainLockEvent(caller, para.fromContract,toChainID, resquestKey, para.args);
             return true;
         }
 

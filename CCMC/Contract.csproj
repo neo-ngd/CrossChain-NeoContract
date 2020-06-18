@@ -46,7 +46,7 @@
   </ItemGroup>
   <ItemGroup>
     <Compile Include="CCMC.cs" />
-    <Compile Include="Nep5Proxy.cs" />
+    <Compile Include="CCMC_Proxy.cs" />
     <Compile Include="Properties\AssemblyInfo.cs" />
   </ItemGroup>
   <ItemGroup>
