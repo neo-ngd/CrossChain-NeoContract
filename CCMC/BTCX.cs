@@ -2,60 +2,288 @@
 using Neo.SmartContract.Framework.Services.Neo;
 using Neo.SmartContract.Framework.Services.System;
 using System;
+using System.Diagnostics;
 using System.Numerics;
 
 namespace CrossChainContract
 {
     public class BTCX : SmartContract
     {
-        //Reuqest prefix
-        private static readonly byte[] requestIDPrefix = new byte[] { 0x01, 0x01 };
-        private static readonly byte[] requestPreifx = new byte[] { 0x01, 0x02 };
+        // dynamic call
+        private delegate object DynCall(string method, object[] args);
 
-        //Header prefix
-        private static readonly byte[] latestHeightPrefix = new byte[] { 0x02, 0x01 };
-        private static readonly byte[] mCBlockHeadersPrefix = new byte[] { 0x02, 0x02 };
-        private static readonly byte[] latestBookKeeperHeightPrefix = new byte[] { 0x02, 0x03 };
-        private static readonly byte[] mCKeeperPubKeysPrefix = new byte[] { 0x02, 0x04 };
-        private static readonly byte[] mCKeeperHeightPrefix = new byte[] { 0x02, 0x05 };
-
-        //tx prefix
-        private static readonly byte[] transactionPrefix = new byte[] { 0x03, 0x01 };
-
-        //代理
-        private static readonly byte[] ProxyPrefix = new byte[] { 0x04, 0x01 };
-
-        //常量
-        private static readonly int MCCHAIN_PUBKEY_LEN = 67;
-        private static readonly int MCCHAIN_SIGNATURE_LEN = 65;
+        //constant value
+        private static readonly BigInteger total_amount = 21000000;
+        private static readonly byte[] CCMCScriptHash = "".HexToBytes();
         private static readonly byte[] Operator = "ALsa2JWWsKiMuqZkCpKvZx2iSoBXjNdpZo".ToScriptHash();
 
-        //动态调用
+        //event
+        public static event Action<byte[], byte[], BigInteger> Transferred;
+        public static event Action<byte[], BigInteger, byte[], byte[], byte[], BigInteger> LockEvent;
+        public static event Action<byte[], byte[], BigInteger> UnlockEvent;
+        //delegate
         delegate object DyncCall(string method, object[] args);
-
-        //------------------------------event--------------------------------
-        //CrossChainLockEvent "from address" "from contract" "to chain id" "key" "tx param"
-        public static event Action<byte[], byte[], BigInteger, byte[], byte[]> CrossChainLockEvent;
-        //CrossChainUnlockEvent fromChainID, TxParam.toContract, txHash
-        public static event Action<BigInteger, byte[], byte[]> CrossChainUnlockEvent;
-        //Sync Genesis Header Event Height, rawHeaders
-        public static event Action<BigInteger, byte[]> InitGenesisBlockEvent;
-        //更换联盟链公式
-        public static event Action<BigInteger, byte[]> ChangeBookKeeperEvent;
-        //同步区块头
-        public static event Action<BigInteger, byte[]> SyncBlockHeaderEvent;
-        public static object Main(string operation, object[] args)
+        public static object Main(string method, object[] args)
         {
-            byte[] caller = ExecutionEngine.CallingScriptHash;
-            if (operation == "currentSyncHeight")
+            if (Runtime.Trigger == TriggerType.Verification)
             {
-                return Storage.Get(latestHeightPrefix).AsBigInteger();
+                return Runtime.CheckWitness(GetOwner());
+            }
+            else if (Runtime.Trigger == TriggerType.Application)
+            {
+                var callscript = ExecutionEngine.CallingScriptHash;
+                var currentHash = ExecutionEngine.ExecutingScriptHash;
+
+                // Contract deployment
+                if (method == "deploy")
+                    return Deploy();
+                if (method == "isDeployed")
+                    return IsDeployed();
+
+                // NEP5 standard methods
+                if (method == "balanceOf") return BalanceOf((byte[])args[0]);
+
+                if (method == "decimals") return Decimals();
+
+                if (method == "name") return Name();
+
+                if (method == "symbol") return Symbol();
+
+                if (method == "totalSupply") return TotalSupply();
+
+                if (method == "transfer") return Transfer((byte[])args[0], (byte[])args[1], (BigInteger)args[2], callscript);
+
+                // Owner management
+                if (method == "transferOwnership")
+                    return TransferOwnership((byte[])args[0]);
+                if (method == "getOwner")
+                    return GetOwner();
+
+                // Contract management
+                if (method == "supportedStandards")
+                    return SupportedStandards();
+                if (method == "pause")
+                    return Pause();
+                if (method == "unpause")
+                    return Unpause();
+                if (method == "isPaused")
+                    return IsPaused();
+                if (method == "upgrade")
+                {
+                    Runtime.Notify("In upgrade");
+                    if (args.Length < 9) return false;
+                    byte[] script = (byte[])args[0];
+                    byte[] plist = (byte[])args[1];
+                    byte rtype = (byte)args[2];
+                    ContractPropertyState cps = (ContractPropertyState)args[3];
+                    string name = (string)args[4];
+                    string version = (string)args[5];
+                    string author = (string)args[6];
+                    string email = (string)args[7];
+                    string description = (string)args[8];
+                    return Upgrade(script, plist, rtype, cps, name, version, author, email, description);
+                }
             }
             return false;
         }
 
-        public static bool Lock(BigInteger toChainId, byte[] toUserAddress, BigInteger amount)
+        #region nep5 method
+        public static bool Deploy()
         {
+            if (!Runtime.CheckWitness(Operator))
+            {
+                Runtime.Notify("Only owner can deploy this contract.");
+                return false;
+            }
+            if (IsDeployed())
+            {
+                Runtime.Notify("Already deployed");
+                return false;
+            }
+
+            StorageMap contract = Storage.CurrentContext.CreateMap(nameof(contract));
+            contract.Put("totalSupply", total_amount);
+            contract.Put("owner", Operator);
+
+            StorageMap asset = Storage.CurrentContext.CreateMap(nameof(asset));
+            asset.Put(Operator, total_amount);
+            Transferred(null, Operator, total_amount);
+            return true;
+        }
+
+        public static bool IsDeployed()
+        {
+            // if totalSupply has value, means deployed
+            StorageMap contract = Storage.CurrentContext.CreateMap(nameof(contract));
+            byte[] total_supply = contract.Get("totalSupply");
+            return total_supply.Length != 0;
+        }
+
+        public static BigInteger BalanceOf(byte[] account)
+        {
+            if (!IsAddress(account))
+            {
+                Runtime.Notify("The parameter account SHOULD be a legal address.");
+                return 0;
+            }
+            StorageMap asset = Storage.CurrentContext.CreateMap(nameof(asset));
+            return asset.Get(account).AsBigInteger();
+        }
+
+        public static byte Decimals() => 0;
+
+        public static string Name() => "BTCx"; //name of the token
+
+        public static string Symbol() => "BTCx"; //symbol of the token
+
+        public static BigInteger TotalSupply()
+        {
+            StorageMap contract = Storage.CurrentContext.CreateMap(nameof(contract));
+            return contract.Get("totalSupply").AsBigInteger();
+        }
+
+        private static bool Transfer(byte[] from, byte[] to, BigInteger amount, byte[] callscript)
+        {
+            if (IsPaused())
+            {
+                Runtime.Notify("BTCx contract is paused.");
+                return false;
+            }
+            if (!IsAddress(from) || !IsAddress(to))
+            {
+                Runtime.Notify("The parameters from and to SHOULD be legal addresses.");
+                return false;
+            }
+            if (amount <= 0)
+            {
+                Runtime.Notify("The parameter amount MUST be greater than 0.");
+                return false;
+            }
+            if (!IsPayable(to))
+            {
+                Runtime.Notify("The to account is not payable.");
+                return false;
+            }
+            if (!Runtime.CheckWitness(from) && from.AsBigInteger() != callscript.AsBigInteger())
+            {
+                Runtime.Notify("Not authorized by the from account");
+                return false;
+            }
+
+            StorageMap asset = Storage.CurrentContext.CreateMap(nameof(asset));
+            var fromAmount = asset.Get(from).AsBigInteger();
+            if (fromAmount < amount)
+            {
+                Runtime.Notify("Insufficient funds");
+                return false;
+            }
+            if (from == to)
+                return true;
+
+            if (fromAmount == amount)
+                asset.Delete(from);
+            else
+                asset.Put(from, fromAmount - amount);
+
+            var toAmount = asset.Get(to).AsBigInteger();
+            asset.Put(to, toAmount + amount);
+
+            Transferred(from, to, amount);
+            return true;
+        }
+
+        public static bool TransferOwnership(byte[] newOwner)
+        {
+            // transfer contract ownership from current owner to a new owner
+            if (!Runtime.CheckWitness(GetOwner()))
+            {
+                Runtime.Notify("Only allowed to be called by owner.");
+                return false;
+            }
+            if (!IsAddress(newOwner))
+            {
+                Runtime.Notify("The parameter newOwner SHOULD be a legal address.");
+                return false;
+            }
+
+            StorageMap contract = Storage.CurrentContext.CreateMap(nameof(contract));
+            contract.Put("owner", newOwner);
+            return true;
+        }
+
+        public static byte[] GetOwner()
+        {
+            StorageMap contract = Storage.CurrentContext.CreateMap(nameof(contract));
+            var owner = contract.Get("owner");
+            return owner;
+        }
+
+
+        public static string[] SupportedStandards() => new string[] { "NEP-5", "NEP-7", "NEP-10" };
+
+        public static bool Pause()
+        {
+            // Set the smart contract to paused state, the token can not be transfered, approved.
+            // Only can invoke some get interface, like getOwner.
+            if (!Runtime.CheckWitness(GetOwner()))
+            {
+                Runtime.Notify("Only allowed to be called by owner.");
+                return false;
+            }
+            StorageMap contract = Storage.CurrentContext.CreateMap(nameof(contract));
+            contract.Put("paused", 1);
+            return true;
+        }
+
+        public static bool Unpause()
+        {
+            if (!Runtime.CheckWitness(GetOwner()))
+            {
+                Runtime.Notify("Only allowed to be called by owner.");
+                return false;
+            }
+            StorageMap contract = Storage.CurrentContext.CreateMap(nameof(contract));
+            contract.Put("paused", 0);
+            return true;
+        }
+
+        public static bool IsPaused()
+        {
+            StorageMap contract = Storage.CurrentContext.CreateMap(nameof(contract));
+            return contract.Get("paused").AsBigInteger() != 0;
+        }
+
+        public static bool Upgrade(byte[] newScript, byte[] paramList, byte returnType, ContractPropertyState cps,
+            string name, string version, string author, string email, string description)
+        {
+            if (!Runtime.CheckWitness(GetOwner()))
+            {
+                Runtime.Notify("Only allowed to be called by owner.");
+                return false;
+            }
+            var contract = Contract.Migrate(newScript, paramList, returnType, cps, name, version, author, email, description);
+            Runtime.Notify("Proxy contract upgraded");
+            return true;
+        }
+
+        private static bool IsAddress(byte[] address)
+        {
+            return address.Length == 20;
+        }
+
+        private static bool IsPayable(byte[] to)
+        {
+            var c = Blockchain.GetContract(to);
+            return c == null || c.IsPayable;
+        }
+        #endregion
+
+        public static bool Lock(byte[] fromAddress, byte[] toUserAddress, BigInteger amount, BigInteger toChainId)
+        {
+            bool success = false;
+            byte[] txData = new byte[] { };
+            byte[] AssetHash = new byte[] { };
+            byte[] redeemScript = new byte[] { };
             TxArgs txArgs = new TxArgs
             {
                 toAddress = toUserAddress,
@@ -68,199 +296,174 @@ namespace CrossChainContract
                     Runtime.Notify("btcx amount should be greater than 2000");
                     return false;
                 }
+                else 
+                {
+                    txData = serializeToBtcTxArgs(txArgs, redeemScript);
+                }
             }
             else 
             {
-
+                txData = serializeTxArgs(txArgs);
             }
+            //call transfer method
+            success = Transfer(fromAddress, ExecutionEngine.ExecutingScriptHash, amount, new byte[] { });
+            if (!success)
+            {
+                Runtime.Notify("failed to transfer");
+                return success;
+            }
+            //call CCMC cross chain method 
+            AssetHash = GetAssetHash(toChainId);
+            var param = new object[] { toChainId, AssetHash, "unlock", txData };
+            var ccmc = (DyncCall)CCMCScriptHash.ToDelegate();
+            success = (bool)ccmc("CrossChain", param);
+            if (!success)
+            {
+                Runtime.Notify("failed to call CCMC");
+                Transfer(ExecutionEngine.ExecutingScriptHash, fromAddress, amount, ExecutionEngine.ExecutingScriptHash);
+            }
+            else 
+            {
+                LockEvent(ExecutionEngine.ExecutingScriptHash, toChainId, AssetHash, fromAddress, txArgs.toAddress, amount);
+            }            
+            return success;
+        }
+
+        public static bool Unlock(byte[] argsBytes, byte[] fromContractAddress, BigInteger fromChainId, byte[] caller)
+        {
+            bool success = false;
+            if (caller.Equals(CCMCScriptHash))
+            {
+                Runtime.Notify("Only allowed to be called by CCMC");
+                return false;
+            }
+            byte[] AssetHash = GetAssetHash(fromChainId);
+            if (!fromContractAddress.Equals(AssetHash))
+            {
+                Runtime.Notify(AssetHash);
+                Runtime.Notify(fromContractAddress);
+                Runtime.Notify("fromContractAddress not correct");
+                return false;
+            }
+            TxArgs txArgs = new TxArgs();
+            txArgs = deserializeTxArgs(argsBytes);
+            if (txArgs.amount < 0)
+            {
+                Runtime.Notify("ToChain Amount SHOULD not be less than 0.");
+                return false;
+            }
+            //transfer asset to toAddress
+            success = Transfer(ExecutionEngine.ExecutingScriptHash, txArgs.toAddress, txArgs.amount, ExecutionEngine.ExecutingScriptHash);
+            if (!success)
+            {
+                Runtime.Notify("Failed to transfer NEP5 token to toAddress.");
+            }
+            else 
+            {
+                UnlockEvent(fromContractAddress, txArgs.toAddress, txArgs.amount);
+            }            
+            return success;
+        }
+
+        public static bool BindAssetHash(BigInteger toChainId, byte[] toAssetHash, BigInteger initialAmount)
+        {
+            if (!Runtime.CheckWitness(Operator)) return false;
+            StorageMap assetHash = Storage.CurrentContext.CreateMap(nameof(assetHash));
+            assetHash.Put(ExecutionEngine.ExecutingScriptHash.Concat(toChainId.AsByteArray()), toAssetHash);
             return true;
         }
 
-        private static ToMerkleValue deserializMerkleValue(byte[] Source)
+        public static byte[] GetAssetHash(BigInteger toChainId)
         {
-            ToMerkleValue result = new ToMerkleValue();
-            int offset = 0;
-
-            //获取txHash
-            var temp = ReadVarBytes(Source, offset);
-            result.txHash = (byte[])temp[0];
-            offset = (int)temp[1];
-
-            //获取fromChainID, Uint64
-            result.fromChainID = Source.Range(offset, 8).ToBigInteger();
-            offset = offset + 8;
-
-            //获取CrossChainTxParameter
-            result.TxParam = deserializCrossChainTxParameter(Source, offset);
-            return result;
+            StorageMap assetHash = Storage.CurrentContext.CreateMap(nameof(assetHash));
+            return assetHash.Get(ExecutionEngine.ExecutingScriptHash.Concat(toChainId.AsByteArray()));
         }
 
-        private static CrossChainTxParameter deserializCrossChainTxParameter(byte[] Source, int offset)
-        {
-            CrossChainTxParameter txParameter = new CrossChainTxParameter();
-            //获取txHash
-            var temp = ReadVarBytes(Source, offset);
-            txParameter.txHash = (byte[])temp[0];
-            offset = (int)temp[1];
-
-            //获取crossChainId
-            temp = ReadVarBytes(Source, offset);
-            txParameter.crossChainID = (byte[])temp[0];
-            offset = (int)temp[1];
-
-            //获取fromContract
-            temp = ReadVarBytes(Source, offset);
-            txParameter.fromContract = (byte[])temp[0];
-            offset = (int)temp[1];
-
-            //获取toChainID
-            txParameter.toChainID = Source.Range(offset, 8).ToBigInteger();
-            offset = offset + 8;
-
-            //获取toContract
-            temp = ReadVarBytes(Source, offset);
-            txParameter.toContract = (byte[])temp[0];
-            offset = (int)temp[1];
-
-            //获取method
-            temp = ReadVarBytes(Source, offset);
-            txParameter.method = (byte[])temp[0];
-            offset = (int)temp[1];
-
-            //获取参数
-            temp = ReadVarBytes(Source, offset);
-            txParameter.args = (byte[])temp[0];
-            offset = (int)temp[1];
-
-            return txParameter;
-        }
-
-        private static byte[] WriteCrossChainTxParameter(CrossChainTxParameter para)
+        private static byte[] serializeToBtcTxArgs(TxArgs txArgs, byte[] redeemScript)
         {
             byte[] result = new byte[] { };
-            result = WriteVarBytes(result, para.txHash);
-            result = WriteVarBytes(result, para.crossChainID);
-            result = WriteVarBytes(result, para.fromContract);
-            //write Uint64
-            byte[] toChainIDBytes = PadRight(para.toChainID.AsByteArray(), 8);
-            result = result.Concat(toChainIDBytes);
-            result = WriteVarBytes(result, para.toContract);
-            result = WriteVarBytes(result, para.method);
-            result = WriteVarBytes(result, para.args);
+            result = WriteVarBytes(txArgs.toAddress, result);
+            result = WriteUint64(txArgs.amount, result);
+            result = WriteVarBytes(redeemScript, result);
             return result;
         }
 
-        private static byte[] MerkleProve(byte[] path, byte[] root)
+        private static byte[] serializeTxArgs(TxArgs txArgs)
         {
-            int offSet = 0;
-            var temp = ReadVarBytes(path, offSet);
-            byte[] value = (byte[])temp[0];
-            offSet = (int)temp[1];
-            byte[] hash = HashLeaf(value);
-            int size = (path.Length - offSet) / 32;
-            for (int i = 0; i < size; i++)
-            {
-                var f = ReadBytes(path, offSet, 1);
-                offSet = (int)f[1];
-
-                var v = ReadBytes(path, offSet, 32);
-                offSet = (int)v[1];
-                if ((byte[])f[0] == new byte[] { 0 })
-                {
-                    hash = HashChildren((byte[])v[0], hash);
-                }
-                else
-                {
-                    hash = HashChildren(hash, (byte[])v[0]);
-                }
-            }
-            if (hash.Equals(root))
-            {
-                return value;
-            }
-            else
-            {
-                return new byte[] { 0x00 };
-            }
+            byte[] result = new byte[] { };
+            result = WriteVarBytes(txArgs.toAddress, result);
+            result = WriteUint64(txArgs.amount, result);
+            return result;
         }
 
-        private static byte[] HashChildren(byte[] v, byte[] hash)
+        private static TxArgs deserializeTxArgs(byte[] source)
         {
-            byte[] prefix = { 1 };
-            return SmartContract.Sha256(prefix.Concat(v).Concat(hash));
+            TxArgs txArgs = new TxArgs();
+            int offset = 0;
+            var Temp = ReadVarBytes(source, offset);
+            txArgs.toAddress = (byte[])Temp[0];
+            offset = (int)Temp[1];
+
+            txArgs.amount = ReadUint64(source, offset);
+            offset += 8;
+            return txArgs;
         }
 
-        private static byte[] HashLeaf(byte[] value)
+        private static byte[] WriteUint16(BigInteger value, byte[] source)
         {
-            byte[] prefix = { 0x00 };
-            return SmartContract.Sha256(prefix.Concat(value));
+            return source.Concat(PadRight(value.ToByteArray(), 2));
         }
 
-        public static object[] DeserializeArgs(byte[] buffer)
+        private static byte[] WriteUint64(BigInteger value, byte[] source)
         {
-            var offset = 0;
-            var res = ReadVarBytes(buffer, offset);
-            var assetAddress = res[0];
-
-            res = ReadVarBytes(buffer, (int)res[1]);
-            var toAddress = res[0];
-
-            res = ReadVarInt(buffer, (int)res[1]);
-            var amount = res[0];
-
-            return new object[] { assetAddress, toAddress, amount };
+            return source.Concat(PadRight(value.ToByteArray(), 8));
         }
 
-        private static byte[] WriteUint16(BigInteger value, byte[] Source)
+        private static BigInteger ReadUint64(byte[] buffer, int offset)
         {
-            return Source.Concat(PadRight(value.ToByteArray(), 2));
+            return buffer.Range(offset, 8).ToBigInteger();
         }
 
-        private static byte[] WriteUint64(BigInteger value, byte[] Source)
+        private static byte[] WriteVarBytes(byte[] Target, byte[] source)
         {
-            return Source.Concat(PadRight(value.ToByteArray(), 8));
+            return WriteVarInt(Target.Length, source).Concat(Target);
         }
 
-        private static byte[] WriteVarBytes(byte[] Source, byte[] Target)
-        {
-            return WriteVarInt(Target.Length, Source).Concat(Target);
-        }
-
-        private static byte[] WriteVarInt(BigInteger value, byte[] Source)
+        private static byte[] WriteVarInt(BigInteger value, byte[] source)
         {
             if (value < 0)
             {
-                return Source;
+                return source;
             }
             else if (value < 0xFD)
             {
-                return Source.Concat(value.ToByteArray());
+                return source.Concat(value.ToByteArray());
             }
             else if (value <= 0xFFFF) // 0xff, need to pad 1 0x00
             {
                 byte[] length = new byte[] { 0xFD };
                 var v = PadRight(value.ToByteArray(), 2);
-                return Source.Concat(length).Concat(v);
+                return source.Concat(length).Concat(v);
             }
             else if (value <= 0XFFFFFFFF) //0xffffff, need to pad 1 0x00 
             {
                 byte[] length = new byte[] { 0xFE };
                 var v = PadRight(value.ToByteArray(), 4);
-                return Source.Concat(length).Concat(v);
+                return source.Concat(length).Concat(v);
             }
             else //0x ff ff ff ff ff, need to pad 3 0x00
             {
                 byte[] length = new byte[] { 0xFF };
                 var v = PadRight(value.ToByteArray(), 8);
-                return Source.Concat(length).Concat(v);
+                return source.Concat(length).Concat(v);
             }
         }
 
-        private static byte[] ReadHash(byte[] Source, int offset)
+        private static byte[] ReadHash(byte[] source, int offset)
         {
-            if (offset + 32 <= Source.Length)
+            if (offset + 32 <= source.Length)
             {
-                return Source.Range(offset, 32);
+                return source.Range(offset, 32);
             }
             throw new ArgumentOutOfRangeException();
         }
