@@ -1,0 +1,327 @@
+﻿using Neo.SmartContract.Framework;
+using Neo.SmartContract.Framework.Services.Neo;
+using Neo.SmartContract.Framework.Services.System;
+using System;
+using System.Numerics;
+
+namespace CrossChainContract
+{
+    public class BTCX : SmartContract
+    {
+        //Reuqest prefix
+        private static readonly byte[] requestIDPrefix = new byte[] { 0x01, 0x01 };
+        private static readonly byte[] requestPreifx = new byte[] { 0x01, 0x02 };
+
+        //Header prefix
+        private static readonly byte[] latestHeightPrefix = new byte[] { 0x02, 0x01 };
+        private static readonly byte[] mCBlockHeadersPrefix = new byte[] { 0x02, 0x02 };
+        private static readonly byte[] latestBookKeeperHeightPrefix = new byte[] { 0x02, 0x03 };
+        private static readonly byte[] mCKeeperPubKeysPrefix = new byte[] { 0x02, 0x04 };
+        private static readonly byte[] mCKeeperHeightPrefix = new byte[] { 0x02, 0x05 };
+
+        //tx prefix
+        private static readonly byte[] transactionPrefix = new byte[] { 0x03, 0x01 };
+
+        //代理
+        private static readonly byte[] ProxyPrefix = new byte[] { 0x04, 0x01 };
+
+        //常量
+        private static readonly int MCCHAIN_PUBKEY_LEN = 67;
+        private static readonly int MCCHAIN_SIGNATURE_LEN = 65;
+        private static readonly byte[] Operator = "ALsa2JWWsKiMuqZkCpKvZx2iSoBXjNdpZo".ToScriptHash();
+
+        //动态调用
+        delegate object DyncCall(string method, object[] args);
+
+        //------------------------------event--------------------------------
+        //CrossChainLockEvent "from address" "from contract" "to chain id" "key" "tx param"
+        public static event Action<byte[], byte[], BigInteger, byte[], byte[]> CrossChainLockEvent;
+        //CrossChainUnlockEvent fromChainID, TxParam.toContract, txHash
+        public static event Action<BigInteger, byte[], byte[]> CrossChainUnlockEvent;
+        //Sync Genesis Header Event Height, rawHeaders
+        public static event Action<BigInteger, byte[]> InitGenesisBlockEvent;
+        //更换联盟链公式
+        public static event Action<BigInteger, byte[]> ChangeBookKeeperEvent;
+        //同步区块头
+        public static event Action<BigInteger, byte[]> SyncBlockHeaderEvent;
+        public static object Main(string operation, object[] args)
+        {
+            byte[] caller = ExecutionEngine.CallingScriptHash;
+            if (operation == "currentSyncHeight")
+            {
+                return Storage.Get(latestHeightPrefix).AsBigInteger();
+            }
+            return false;
+        }
+
+        public static bool Lock(BigInteger toChainId, byte[] toUserAddress, BigInteger amount)
+        {
+            TxArgs txArgs = new TxArgs
+            {
+                toAddress = toUserAddress,
+                amount = amount
+            };
+            if (toChainId == 1)
+            {
+                if (amount < 2000)
+                {
+                    Runtime.Notify("btcx amount should be greater than 2000");
+                    return false;
+                }
+            }
+            else 
+            {
+
+            }
+            return true;
+        }
+
+        private static ToMerkleValue deserializMerkleValue(byte[] Source)
+        {
+            ToMerkleValue result = new ToMerkleValue();
+            int offset = 0;
+
+            //获取txHash
+            var temp = ReadVarBytes(Source, offset);
+            result.txHash = (byte[])temp[0];
+            offset = (int)temp[1];
+
+            //获取fromChainID, Uint64
+            result.fromChainID = Source.Range(offset, 8).ToBigInteger();
+            offset = offset + 8;
+
+            //获取CrossChainTxParameter
+            result.TxParam = deserializCrossChainTxParameter(Source, offset);
+            return result;
+        }
+
+        private static CrossChainTxParameter deserializCrossChainTxParameter(byte[] Source, int offset)
+        {
+            CrossChainTxParameter txParameter = new CrossChainTxParameter();
+            //获取txHash
+            var temp = ReadVarBytes(Source, offset);
+            txParameter.txHash = (byte[])temp[0];
+            offset = (int)temp[1];
+
+            //获取crossChainId
+            temp = ReadVarBytes(Source, offset);
+            txParameter.crossChainID = (byte[])temp[0];
+            offset = (int)temp[1];
+
+            //获取fromContract
+            temp = ReadVarBytes(Source, offset);
+            txParameter.fromContract = (byte[])temp[0];
+            offset = (int)temp[1];
+
+            //获取toChainID
+            txParameter.toChainID = Source.Range(offset, 8).ToBigInteger();
+            offset = offset + 8;
+
+            //获取toContract
+            temp = ReadVarBytes(Source, offset);
+            txParameter.toContract = (byte[])temp[0];
+            offset = (int)temp[1];
+
+            //获取method
+            temp = ReadVarBytes(Source, offset);
+            txParameter.method = (byte[])temp[0];
+            offset = (int)temp[1];
+
+            //获取参数
+            temp = ReadVarBytes(Source, offset);
+            txParameter.args = (byte[])temp[0];
+            offset = (int)temp[1];
+
+            return txParameter;
+        }
+
+        private static byte[] WriteCrossChainTxParameter(CrossChainTxParameter para)
+        {
+            byte[] result = new byte[] { };
+            result = WriteVarBytes(result, para.txHash);
+            result = WriteVarBytes(result, para.crossChainID);
+            result = WriteVarBytes(result, para.fromContract);
+            //write Uint64
+            byte[] toChainIDBytes = PadRight(para.toChainID.AsByteArray(), 8);
+            result = result.Concat(toChainIDBytes);
+            result = WriteVarBytes(result, para.toContract);
+            result = WriteVarBytes(result, para.method);
+            result = WriteVarBytes(result, para.args);
+            return result;
+        }
+
+        private static byte[] MerkleProve(byte[] path, byte[] root)
+        {
+            int offSet = 0;
+            var temp = ReadVarBytes(path, offSet);
+            byte[] value = (byte[])temp[0];
+            offSet = (int)temp[1];
+            byte[] hash = HashLeaf(value);
+            int size = (path.Length - offSet) / 32;
+            for (int i = 0; i < size; i++)
+            {
+                var f = ReadBytes(path, offSet, 1);
+                offSet = (int)f[1];
+
+                var v = ReadBytes(path, offSet, 32);
+                offSet = (int)v[1];
+                if ((byte[])f[0] == new byte[] { 0 })
+                {
+                    hash = HashChildren((byte[])v[0], hash);
+                }
+                else
+                {
+                    hash = HashChildren(hash, (byte[])v[0]);
+                }
+            }
+            if (hash.Equals(root))
+            {
+                return value;
+            }
+            else
+            {
+                return new byte[] { 0x00 };
+            }
+        }
+
+        private static byte[] HashChildren(byte[] v, byte[] hash)
+        {
+            byte[] prefix = { 1 };
+            return SmartContract.Sha256(prefix.Concat(v).Concat(hash));
+        }
+
+        private static byte[] HashLeaf(byte[] value)
+        {
+            byte[] prefix = { 0x00 };
+            return SmartContract.Sha256(prefix.Concat(value));
+        }
+
+        public static object[] DeserializeArgs(byte[] buffer)
+        {
+            var offset = 0;
+            var res = ReadVarBytes(buffer, offset);
+            var assetAddress = res[0];
+
+            res = ReadVarBytes(buffer, (int)res[1]);
+            var toAddress = res[0];
+
+            res = ReadVarInt(buffer, (int)res[1]);
+            var amount = res[0];
+
+            return new object[] { assetAddress, toAddress, amount };
+        }
+
+        private static byte[] WriteUint16(BigInteger value, byte[] Source)
+        {
+            return Source.Concat(PadRight(value.ToByteArray(), 2));
+        }
+
+        private static byte[] WriteUint64(BigInteger value, byte[] Source)
+        {
+            return Source.Concat(PadRight(value.ToByteArray(), 8));
+        }
+
+        private static byte[] WriteVarBytes(byte[] Source, byte[] Target)
+        {
+            return WriteVarInt(Target.Length, Source).Concat(Target);
+        }
+
+        private static byte[] WriteVarInt(BigInteger value, byte[] Source)
+        {
+            if (value < 0)
+            {
+                return Source;
+            }
+            else if (value < 0xFD)
+            {
+                return Source.Concat(value.ToByteArray());
+            }
+            else if (value <= 0xFFFF) // 0xff, need to pad 1 0x00
+            {
+                byte[] length = new byte[] { 0xFD };
+                var v = PadRight(value.ToByteArray(), 2);
+                return Source.Concat(length).Concat(v);
+            }
+            else if (value <= 0XFFFFFFFF) //0xffffff, need to pad 1 0x00 
+            {
+                byte[] length = new byte[] { 0xFE };
+                var v = PadRight(value.ToByteArray(), 4);
+                return Source.Concat(length).Concat(v);
+            }
+            else //0x ff ff ff ff ff, need to pad 3 0x00
+            {
+                byte[] length = new byte[] { 0xFF };
+                var v = PadRight(value.ToByteArray(), 8);
+                return Source.Concat(length).Concat(v);
+            }
+        }
+
+        private static byte[] ReadHash(byte[] Source, int offset)
+        {
+            if (offset + 32 <= Source.Length)
+            {
+                return Source.Range(offset, 32);
+            }
+            throw new ArgumentOutOfRangeException();
+        }
+
+        private static object[] ReadVarInt(byte[] buffer, int offset)
+        {
+            var res = ReadBytes(buffer, offset, 1); // read the first byte
+            var fb = (byte[])res[0];
+            if (fb.Length != 1) throw new ArgumentOutOfRangeException();
+            var newOffset = (int)res[1];
+            if (fb.Equals(new byte[] { 0xFD }))
+            {
+                return new object[] { buffer.Range(newOffset, 2).ToBigInteger(), newOffset + 2 };
+            }
+            else if (fb.Equals(new byte[] { 0xFE }))
+            {
+                return new object[] { buffer.Range(newOffset, 4).ToBigInteger(), newOffset + 4 };
+            }
+            else if (fb.Equals(new byte[] { 0xFF }))
+            {
+                return new object[] { buffer.Range(newOffset, 8).ToBigInteger(), newOffset + 8 };
+            }
+            else
+            {
+                return new object[] { fb.Concat(new byte[] { 0x00 }).ToBigInteger(), newOffset };
+            }
+        }
+
+        private static object[] ReadVarBytes(byte[] buffer, int offset)
+        {
+            var res = ReadVarInt(buffer, offset);
+            var count = (int)res[0];
+            var newOffset = (int)res[1];
+            return ReadBytes(buffer, newOffset, count);
+        }
+
+        private static object[] ReadBytes(byte[] buffer, int offset, int count)
+        {
+            if (offset + count > buffer.Length) throw new ArgumentOutOfRangeException();
+            return new object[] { buffer.Range(offset, count), offset + count };
+        }
+
+        private static byte[] PadRight(byte[] value, int length)
+        {
+            var l = value.Length;
+            if (l > length)
+                return value;
+            for (int i = 0; i < length - l; i++)
+            {
+                value = value.Concat(new byte[] { 0x00 });
+            }
+            return value;
+        }
+
+        public struct TxArgs 
+        {
+            public byte[] toAddress;
+            public BigInteger amount;
+        }
+
+        [Syscall("Neo.Cryptography.Secp256k1Recover")]
+        public static extern byte[] Secp256k1Recover(byte[] r, byte[] s, bool v, byte[] message);
+    }
+}
