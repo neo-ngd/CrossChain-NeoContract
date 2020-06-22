@@ -16,6 +16,7 @@ namespace CrossChainContract
         private static readonly BigInteger total_amount = 21000000;
         private static readonly byte[] CCMCScriptHash = "".HexToBytes();
         private static readonly byte[] Operator = "ALsa2JWWsKiMuqZkCpKvZx2iSoBXjNdpZo".ToScriptHash();
+        private static readonly byte[] redeemScriptPrefix = new byte[] { 0x00, 0x01 };
 
         //event
         public static event Action<byte[], byte[], BigInteger> Transferred;
@@ -32,7 +33,6 @@ namespace CrossChainContract
             else if (Runtime.Trigger == TriggerType.Application)
             {
                 var callscript = ExecutionEngine.CallingScriptHash;
-                var currentHash = ExecutionEngine.ExecutingScriptHash;
 
                 // Contract deployment
                 if (method == "deploy")
@@ -83,6 +83,14 @@ namespace CrossChainContract
                     string description = (string)args[8];
                     return Upgrade(script, plist, rtype, cps, name, version, author, email, description);
                 }
+
+                // Cross Chain management
+                if (method == "lock")
+                    return Lock((byte[])args[0], (byte[])args[1], (BigInteger)args[2], (BigInteger)args[3]);
+                if (method == "unlock")
+                    return Unlock((byte[])args[0], (byte[])args[1], (BigInteger)args[2], callscript);
+                if (method == "bindAssetHash")
+                    return BindAssetHash((BigInteger)args[0], (byte[])args[1]);
             }
             return false;
         }
@@ -282,8 +290,8 @@ namespace CrossChainContract
         {
             bool success = false;
             byte[] txData = new byte[] { };
-            byte[] AssetHash = new byte[] { };
-            byte[] redeemScript = new byte[] { };
+            byte[] AssetHash = GetAssetHash(toChainId);
+            byte[] redeemScript = getRedeemScript();
             TxArgs txArgs = new TxArgs
             {
                 toAddress = toUserAddress,
@@ -313,7 +321,6 @@ namespace CrossChainContract
                 return success;
             }
             //call CCMC cross chain method 
-            AssetHash = GetAssetHash(toChainId);
             var param = new object[] { toChainId, AssetHash, "unlock", txData };
             var ccmc = (DyncCall)CCMCScriptHash.ToDelegate();
             success = (bool)ccmc("CrossChain", param);
@@ -365,7 +372,19 @@ namespace CrossChainContract
             return success;
         }
 
-        public static bool BindAssetHash(BigInteger toChainId, byte[] toAssetHash, BigInteger initialAmount)
+        public static bool SetRedeemScript(byte[] redeemScript)
+        {
+            if (!Runtime.CheckWitness(Operator)) return false;
+            Storage.Put(redeemScriptPrefix, redeemScript);
+            return true;
+        }
+
+        private static byte[] getRedeemScript()
+        {            
+            return Storage.Get(redeemScriptPrefix);
+        }
+
+        public static bool BindAssetHash(BigInteger toChainId, byte[] toAssetHash)
         {
             if (!Runtime.CheckWitness(Operator)) return false;
             StorageMap assetHash = Storage.CurrentContext.CreateMap(nameof(assetHash));
@@ -523,8 +542,5 @@ namespace CrossChainContract
             public byte[] toAddress;
             public BigInteger amount;
         }
-
-        [Syscall("Neo.Cryptography.Secp256k1Recover")]
-        public static extern byte[] Secp256k1Recover(byte[] r, byte[] s, bool v, byte[] message);
     }
 }
