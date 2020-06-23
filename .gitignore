@@ -354,3 +354,6 @@ MigrationBackup/
 /CCMC/CCMC.abi.json
 /CCMC/CCMC.avm
 /CCMC/CCMC.avmdbgnfo
+*.avm
+*.avmdbgnfo
+/CCMC/BTCX.abi.json
