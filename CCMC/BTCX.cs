@@ -345,7 +345,7 @@ namespace CrossChainContract
         public static bool UnlockAsset(byte[] argsBytes, byte[] fromContractAddress, BigInteger fromChainId, byte[] caller)
         {
             bool success = false;
-            if (caller.Equals(CCMCScriptHash))
+            if (!caller.Equals(CCMCScriptHash))
             {
                 Runtime.Notify("Only allowed to be called by CCMC");
                 return false;
