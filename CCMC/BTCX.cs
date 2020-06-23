@@ -14,7 +14,7 @@ namespace CrossChainContract
 
         //constant value
         private static readonly BigInteger total_amount = 21000000;
-        private static readonly byte[] CCMCScriptHash = "".HexToBytes();
+        private static readonly byte[] CCMCScriptHash = "4345b582ee86097b6aeec86c20e8e0ffe84f5549".HexToBytes();
         private static readonly byte[] Operator = "ALsa2JWWsKiMuqZkCpKvZx2iSoBXjNdpZo".ToScriptHash();
         private static readonly byte[] redeemScriptPrefix = new byte[] { 0x00, 0x01 };
 
@@ -91,6 +91,12 @@ namespace CrossChainContract
                     return UnlockAsset((byte[])args[0], (byte[])args[1], (BigInteger)args[2], callscript);
                 if (method == "bindAssetHash")
                     return BindAssetHash((BigInteger)args[0], (byte[])args[1]);
+                if (method == "setRedeemScript")
+                    return SetRedeemScript((byte[])args[0]);
+                if (method == "getAssetHash")
+                    return GetAssetHash((BigInteger)args[0]);
+                if (method == "getRedeemScript")
+                    return GetRedeemScript();
             }
             return false;
         }
@@ -291,7 +297,7 @@ namespace CrossChainContract
             bool success = false;
             byte[] txData = new byte[] { };
             byte[] AssetHash = GetAssetHash(toChainId);
-            byte[] redeemScript = getRedeemScript();
+            byte[] redeemScript = GetRedeemScript();
             TxArgs txArgs = new TxArgs
             {
                 toAddress = toUserAddress,
@@ -379,7 +385,7 @@ namespace CrossChainContract
             return true;
         }
 
-        private static byte[] getRedeemScript()
+        private static byte[] GetRedeemScript()
         {            
             return Storage.Get(redeemScriptPrefix);
         }
