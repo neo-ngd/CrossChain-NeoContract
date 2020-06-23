@@ -20,8 +20,8 @@ namespace CrossChainContract
 
         //event
         public static event Action<byte[], byte[], BigInteger> Transferred;
-        public static event Action<byte[], BigInteger, byte[], byte[], byte[], BigInteger> LockEvent;
-        public static event Action<byte[], byte[], BigInteger> UnlockEvent;
+        public static event Action<byte[], byte[], BigInteger, byte[], byte[], BigInteger> Lock;//from_asset_hash,from_address,to_chain_id,to_asset_hash,to_address,amount
+        public static event Action<byte[], byte[], BigInteger> Unlock;//to_asset_hash,to_address,amount
         //delegate
         delegate object DyncCall(string method, object[] args);
         public static object Main(string method, object[] args)
@@ -86,9 +86,9 @@ namespace CrossChainContract
 
                 // Cross Chain management
                 if (method == "lock")
-                    return Lock((byte[])args[0], (byte[])args[1], (BigInteger)args[2], (BigInteger)args[3]);
+                    return LockAsset((byte[])args[0], (byte[])args[1], (BigInteger)args[2], (BigInteger)args[3]);
                 if (method == "unlock")
-                    return Unlock((byte[])args[0], (byte[])args[1], (BigInteger)args[2], callscript);
+                    return UnlockAsset((byte[])args[0], (byte[])args[1], (BigInteger)args[2], callscript);
                 if (method == "bindAssetHash")
                     return BindAssetHash((BigInteger)args[0], (byte[])args[1]);
             }
@@ -286,7 +286,7 @@ namespace CrossChainContract
         }
         #endregion
 
-        public static bool Lock(byte[] fromAddress, byte[] toUserAddress, BigInteger amount, BigInteger toChainId)
+        public static bool LockAsset(byte[] fromAddress, byte[] toUserAddress, BigInteger amount, BigInteger toChainId)
         {
             bool success = false;
             byte[] txData = new byte[] { };
@@ -331,12 +331,12 @@ namespace CrossChainContract
             }
             else 
             {
-                LockEvent(ExecutionEngine.ExecutingScriptHash, toChainId, AssetHash, fromAddress, txArgs.toAddress, amount);
+                Lock(ExecutionEngine.ExecutingScriptHash, fromAddress, toChainId, redeemScript, toUserAddress, amount);
             }            
             return success;
         }
 
-        public static bool Unlock(byte[] argsBytes, byte[] fromContractAddress, BigInteger fromChainId, byte[] caller)
+        public static bool UnlockAsset(byte[] argsBytes, byte[] fromContractAddress, BigInteger fromChainId, byte[] caller)
         {
             bool success = false;
             if (caller.Equals(CCMCScriptHash))
@@ -367,7 +367,7 @@ namespace CrossChainContract
             }
             else 
             {
-                UnlockEvent(fromContractAddress, txArgs.toAddress, txArgs.amount);
+                Unlock(ExecutionEngine.ExecutingScriptHash, txArgs.toAddress, txArgs.amount);
             }            
             return success;
         }
