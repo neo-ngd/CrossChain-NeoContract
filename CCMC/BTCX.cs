@@ -1,10 +1,11 @@
-﻿using Neo.SmartContract.Framework;
+using Neo.SmartContract.Framework;
 using Neo.SmartContract.Framework.Services.Neo;
 using Neo.SmartContract.Framework.Services.System;
 using System;
-using System.Diagnostics;
+using System.ComponentModel;
 using System.Numerics;
 
+[assembly: Features(ContractPropertyState.HasStorage | ContractPropertyState.HasDynamicInvoke | ContractPropertyState.Payable)]
 namespace CrossChainContract
 {
     public class BTCX : SmartContract
@@ -13,12 +14,13 @@ namespace CrossChainContract
         private delegate object DynCall(string method, object[] args);
 
         //constant value
-        private static readonly BigInteger total_amount = 21000000;
+        private static readonly BigInteger total_amount = 2100000000000000;
         private static readonly byte[] CCMCScriptHash = "4345b582ee86097b6aeec86c20e8e0ffe84f5549".HexToBytes();
         private static readonly byte[] Operator = "ALsa2JWWsKiMuqZkCpKvZx2iSoBXjNdpZo".ToScriptHash();
         private static readonly byte[] redeemScriptPrefix = new byte[] { 0x00, 0x01 };
 
         //event
+        [DisplayName("transfer")]
         public static event Action<byte[], byte[], BigInteger> Transferred;
         public static event Action<byte[], byte[], BigInteger, byte[], byte[], BigInteger> Lock;//from_asset_hash,from_address,to_chain_id,to_asset_hash,to_address,amount
         public static event Action<byte[], byte[], BigInteger> Unlock;//to_asset_hash,to_address,amount
@@ -102,6 +104,7 @@ namespace CrossChainContract
         }
 
         #region nep5 method
+        [DisplayName("deploy")]
         public static bool Deploy()
         {
             if (!Runtime.CheckWitness(Operator))
@@ -125,6 +128,7 @@ namespace CrossChainContract
             return true;
         }
 
+        [DisplayName("isDeploy")]
         public static bool IsDeployed()
         {
             // if totalSupply has value, means deployed
@@ -133,6 +137,7 @@ namespace CrossChainContract
             return total_supply.Length != 0;
         }
 
+        [DisplayName("balanceOf")]
         public static BigInteger BalanceOf(byte[] account)
         {
             if (!IsAddress(account))
@@ -144,12 +149,16 @@ namespace CrossChainContract
             return asset.Get(account).AsBigInteger();
         }
 
-        public static byte Decimals() => 0;
+        [DisplayName("decimals")]
+        public static byte Decimals() => 8;
 
+        [DisplayName("name")]
         public static string Name() => "BTCx"; //name of the token
 
+        [DisplayName("symbol")]
         public static string Symbol() => "BTCx"; //symbol of the token
 
+        [DisplayName("totalSupply")]
         public static BigInteger TotalSupply()
         {
             StorageMap contract = Storage.CurrentContext.CreateMap(nameof(contract));
@@ -206,6 +215,7 @@ namespace CrossChainContract
             return true;
         }
 
+        [DisplayName("transferOwnerShip")]
         public static bool TransferOwnership(byte[] newOwner)
         {
             // transfer contract ownership from current owner to a new owner
@@ -225,6 +235,7 @@ namespace CrossChainContract
             return true;
         }
 
+        [DisplayName("getOwner")]
         public static byte[] GetOwner()
         {
             StorageMap contract = Storage.CurrentContext.CreateMap(nameof(contract));
@@ -232,9 +243,10 @@ namespace CrossChainContract
             return owner;
         }
 
-
+        [DisplayName("supportStandards")]
         public static string[] SupportedStandards() => new string[] { "NEP-5", "NEP-7", "NEP-10" };
 
+        [DisplayName("pause")]
         public static bool Pause()
         {
             // Set the smart contract to paused state, the token can not be transfered, approved.
@@ -249,6 +261,7 @@ namespace CrossChainContract
             return true;
         }
 
+        [DisplayName("unpause")]
         public static bool Unpause()
         {
             if (!Runtime.CheckWitness(GetOwner()))
@@ -261,12 +274,14 @@ namespace CrossChainContract
             return true;
         }
 
+        [DisplayName("isPaused")]
         public static bool IsPaused()
         {
             StorageMap contract = Storage.CurrentContext.CreateMap(nameof(contract));
             return contract.Get("paused").AsBigInteger() != 0;
         }
 
+        [DisplayName("upgrade")]
         public static bool Upgrade(byte[] newScript, byte[] paramList, byte returnType, ContractPropertyState cps,
             string name, string version, string author, string email, string description)
         {
@@ -280,6 +295,7 @@ namespace CrossChainContract
             return true;
         }
 
+
         private static bool IsAddress(byte[] address)
         {
             return address.Length == 20;
@@ -292,6 +308,7 @@ namespace CrossChainContract
         }
         #endregion
 
+        [DisplayName("lock")]
         public static bool LockAsset(byte[] fromAddress, byte[] toUserAddress, BigInteger amount, BigInteger toChainId)
         {
             bool success = false;
@@ -305,7 +322,7 @@ namespace CrossChainContract
             };
             if (toChainId == 1)
             {
-                if (amount < 2000)
+                if (amount < 200000000000)
                 {
                     Runtime.Notify("btcx amount should be greater than 2000");
                     return false;
@@ -342,6 +359,7 @@ namespace CrossChainContract
             return success;
         }
 
+        [DisplayName("unlock")]
         public static bool UnlockAsset(byte[] argsBytes, byte[] fromContractAddress, BigInteger fromChainId, byte[] caller)
         {
             bool success = false;
@@ -378,6 +396,7 @@ namespace CrossChainContract
             return success;
         }
 
+        [DisplayName("setRedeemScript")]
         public static bool SetRedeemScript(byte[] redeemScript)
         {
             if (!Runtime.CheckWitness(Operator)) return false;
@@ -385,11 +404,13 @@ namespace CrossChainContract
             return true;
         }
 
+        [DisplayName("getRedeemScript")]
         private static byte[] GetRedeemScript()
         {            
             return Storage.Get(redeemScriptPrefix);
         }
 
+        [DisplayName("bindAssetHash")]
         public static bool BindAssetHash(BigInteger toChainId, byte[] toAssetHash)
         {
             if (!Runtime.CheckWitness(Operator)) return false;
@@ -398,6 +419,7 @@ namespace CrossChainContract
             return true;
         }
 
+        [DisplayName("getAssetHash")]
         public static byte[] GetAssetHash(BigInteger toChainId)
         {
             StorageMap assetHash = Storage.CurrentContext.CreateMap(nameof(assetHash));
