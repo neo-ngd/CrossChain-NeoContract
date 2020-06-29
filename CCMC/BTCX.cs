@@ -322,7 +322,7 @@ namespace CrossChainContract
             };
             if (toChainId == 1)
             {
-                if (amount < 200000000000)
+                if (amount < 2000)
                 {
                     Runtime.Notify("btcx amount should be greater than 2000");
                     return false;
