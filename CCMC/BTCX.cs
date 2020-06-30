@@ -97,8 +97,6 @@ namespace CrossChainContract
                     return GetAssetHash((BigInteger)args[0]);
                 if (method == "getRedeemScript")
                     return GetRedeemScript();
-                if (method == "writeVarInt")
-                    return WriteVarInt((BigInteger)args[0], (byte[])args[1]);
             }
             return false;
         }
