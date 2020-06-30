@@ -778,33 +778,34 @@ namespace CrossChainContract
             return WriteVarInt(Target.Length, Source).Concat(Target);
         }
 
-        private static byte[] WriteVarInt(BigInteger value, byte[] Source)
+        private static byte[] WriteVarInt(BigInteger value, byte[] source)
         {
             if (value < 0)
             {
-                return Source;
+                return source;
             }
             else if (value < 0xFD)
             {
-                return Source.Concat(value.ToByteArray());
+                var v = PadRight(value.ToByteArray(), 1);
+                return source.Concat(v);
             }
             else if (value <= 0xFFFF) // 0xff, need to pad 1 0x00
             {
                 byte[] length = new byte[] { 0xFD };
                 var v = PadRight(value.ToByteArray(), 2);
-                return Source.Concat(length).Concat(v);
+                return source.Concat(length).Concat(v);
             }
             else if (value <= 0XFFFFFFFF) //0xffffff, need to pad 1 0x00 
             {
                 byte[] length = new byte[] { 0xFE };
                 var v = PadRight(value.ToByteArray(), 4);
-                return Source.Concat(length).Concat(v);
+                return source.Concat(length).Concat(v);
             }
             else //0x ff ff ff ff ff, need to pad 3 0x00
             {
                 byte[] length = new byte[] { 0xFF };
                 var v = PadRight(value.ToByteArray(), 8);
-                return Source.Concat(length).Concat(v);
+                return source.Concat(length).Concat(v);
             }
         }
 
@@ -859,7 +860,9 @@ namespace CrossChainContract
         {
             var l = value.Length;
             if (l > length)
-                return value;
+            {
+                value = value.Take(length);
+            }
             for (int i = 0; i < length - l; i++)
             {
                 value = value.Concat(new byte[] { 0x00 });
