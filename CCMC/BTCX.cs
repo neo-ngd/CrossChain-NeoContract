@@ -97,6 +97,8 @@ namespace CrossChainContract
                     return GetAssetHash((BigInteger)args[0]);
                 if (method == "getRedeemScript")
                     return GetRedeemScript();
+                if (method == "writeVarInt")
+                    return WriteVarInt((BigInteger)args[0], (byte[])args[1]);
             }
             return false;
         }
@@ -462,7 +464,8 @@ namespace CrossChainContract
             }
             else if (value < 0xFD)
             {
-                return source.Concat(value.ToByteArray());
+                var v = PadRight(value.ToByteArray(), 1);
+                return source.Concat(v);
             }
             else if (value <= 0xFFFF) // 0xff, need to pad 1 0x00
             {
@@ -535,7 +538,9 @@ namespace CrossChainContract
         {
             var l = value.Length;
             if (l > length)
-                return value;
+            {
+                value = value.Take(length);
+            }                
             for (int i = 0; i < length - l; i++)
             {
                 value = value.Concat(new byte[] { 0x00 });
