@@ -22,10 +22,7 @@ namespace CrossChainContract
         //tx prefix
         private static readonly byte[] transactionPrefix = new byte[] { 0x03, 0x01 };
 
-        //代理
-        private static readonly byte[] ProxyPrefix = new byte[] { 0x04, 0x01 };
-
-        //常量
+        //constant
         private static readonly int MCCHAIN_PUBKEY_LEN = 67;
         private static readonly int MCCHAIN_SIGNATURE_LEN = 65;
         private static readonly byte[] Operator = "ALsa2JWWsKiMuqZkCpKvZx2iSoBXjNdpZo".ToScriptHash();
@@ -34,10 +31,10 @@ namespace CrossChainContract
         delegate object DyncCall(string method, object[] args);
 
         //------------------------------event--------------------------------
-        //CrossChainEvent tx.origin, param.txHash, _token, _toChainId, _toContract, rawParam, requestKey
-        public static event Action<byte[], byte[], byte[], BigInteger, byte[], byte[], byte[]> CrossChainEvent;
-        //CrossChainTxEvent fromChainID, TxParam.toContract, txHash, TxPara.txHash
-        public static event Action<BigInteger, byte[], byte[], byte[]> VerifyAndExecuteTxEvent;
+        //CrossChainLockEvent "from address" "from contract" "to chain id" "key" "tx param"
+        public static event Action<byte[], byte[], BigInteger, byte[], byte[]> CrossChainLockEvent;
+        //CrossChainUnlockEvent fromChainID, TxParam.toContract, txHash
+        public static event Action<BigInteger, byte[], byte[]> CrossChainUnlockEvent;
         //Sync Genesis Header Event Height, rawHeaders
         public static event Action<BigInteger, byte[]> InitGenesisBlockEvent;
         //更换联盟链公式
@@ -79,83 +76,7 @@ namespace CrossChainContract
             {
                 return VerifyAndExecuteTxTest((byte[])args[0], (byte[])args[1]);
             }
-            else if (operation == "RegisterProxy")
-            {
-                return RegisterProxy((byte[])args[0]);
-            }
-            else if (operation == "ChangeProxyState")
-            {
-                return ChangeProxyState((byte[])args[0]);
-            }
             return false;
-        }
-
-        public static bool RegisterProxy(byte[] ProxyScriptHash)
-        {
-            if (Runtime.CheckWitness(Operator))
-            {
-                byte[] Proxy = Storage.Get(ProxyPrefix);
-                Map<byte[], bool> proxy;
-                if (Proxy.AsBigInteger().Equals(0))
-                {
-                    proxy = new Map<byte[], bool>();
-                }
-                else
-                {
-                    proxy = (Map<byte[], bool>)Proxy.Deserialize();
-                }
-                proxy[ProxyScriptHash] = true;
-                Storage.Put(ProxyPrefix, proxy.Serialize());
-                return true;
-            }
-            else
-            {
-                return false;
-            }
-        }
-
-        public static bool CheckProxyRegisted(byte[] caller)
-        {
-            byte[] Proxy = Storage.Get(ProxyPrefix);
-            if (Proxy.AsBigInteger().Equals(0))
-            {
-                return false;
-            }
-            else
-            {
-                Map<byte[], bool> proxy = (Map<byte[], bool>)Proxy.Deserialize();
-                if (proxy.HasKey(caller))
-                {
-                    return proxy[caller];
-                }
-                else
-                {
-                    return false;
-                }
-            }
-        }
-
-        public static bool ChangeProxyState(byte[] ProxyScriptHash)
-        {
-            if (!Runtime.CheckWitness(Operator)) return false;
-            byte[] Proxy = Storage.Get(ProxyPrefix);
-            if (Proxy.AsBigInteger().Equals(0))
-            {
-                return false;
-            }
-            else
-            {
-                Map<byte[], bool> proxy = (Map<byte[], bool>)Proxy.Deserialize();
-                if (proxy.HasKey(ProxyScriptHash))
-                {
-                    proxy[ProxyScriptHash] = !proxy[ProxyScriptHash];
-                    return true;
-                }
-                else
-                {
-                    return false;
-                }
-            }
         }
 
         private static byte[] getHeader(BigInteger blockHeight)
@@ -165,7 +86,7 @@ namespace CrossChainContract
             {
                 return new byte[] { 0x00 };
             }
-            else 
+            else
             {
                 return rawHeader;
             }
@@ -179,10 +100,10 @@ namespace CrossChainContract
                 Runtime.Notify("blockHeight > LatestHeight!");
                 return false;
             }
-            //根据高度取出root
+            //get root by height
             byte[] rawHeader = getHeader(blockHeight);
             Header header;
-            if (!rawHeader.Equals(new byte[] { 0x00}))
+            if (!rawHeader.Equals(new byte[] { 0x00 }))
             {
                 header = deserializHeader(rawHeader);
             }
@@ -191,7 +112,7 @@ namespace CrossChainContract
                 Runtime.Notify("Header does not exist.");
                 return false;
             }
-            //验证toMerkleValue
+            // verify toMerkleValue
             byte[] CrossChainParams = MerkleProve(proof, header.crossStatesRoot);
             if (CrossChainParams.Equals(new byte[] { 0x00 }))
             {
@@ -199,19 +120,19 @@ namespace CrossChainContract
                 return false;
             }
             ToMerkleValue merkleValue = deserializMerkleValue(CrossChainParams);
-            //通过参数中的txid查看交易是否已经被执行过
+            //check by txid
             if (Storage.Get(transactionPrefix.Concat(merkleValue.txHash)).AsBigInteger() == 1)
             {
                 Runtime.Notify("Transaction has been executed");
                 return false;
             }
-            //TODO: 确定Neo的跨链ID 并写死(暂定neo id 为4, 后面根据实际情况修改)
+            //check to chainID
             if (merkleValue.TxParam.toChainID != 4)
             {
                 Runtime.Notify("Not Neo crosschain tx");
                 return false;
             }
-            //执行跨链交易
+            //run croos chain tx
             if (ExecuteCrossChainTx(merkleValue))
             {
                 Runtime.Notify("Tx execute success");
@@ -221,19 +142,14 @@ namespace CrossChainContract
                 Runtime.Notify("Tx execute fail");
             }
 
-            //发出事件
-            VerifyAndExecuteTxEvent
-                (merkleValue.fromChainID,
-                merkleValue.TxParam.toContract,
-                merkleValue.txHash,
-                merkleValue.TxParam.txHash);
+            //event
+            CrossChainUnlockEvent(merkleValue.fromChainID, merkleValue.TxParam.toContract, merkleValue.txHash);
 
             return true;
         }
 
         public static object VerifyAndExecuteTxTest(byte[] proof, byte[] root)
         {
-            //验证toMerkleValue
             byte[] CrossChainParams = MerkleProve(proof, root);
             if (CrossChainParams.Equals(new byte[] { 0x00 }))
             {
@@ -241,13 +157,11 @@ namespace CrossChainContract
                 return false;
             }
             ToMerkleValue merkleValue = deserializMerkleValue(CrossChainParams);
-            //通过参数中的txid查看交易是否已经被执行过
             if (Storage.Get(transactionPrefix.Concat(merkleValue.txHash)).AsBigInteger() == 1)
             {
                 Runtime.Notify("Transaction has been executed");
                 return false;
             }
-            //TODO: 确定Neo的跨链ID 并写死(暂定neo id 为4, 后面根据实际情况修改)
             if (merkleValue.TxParam.toChainID != 4)
             {
                 Runtime.Notify("Not Neo crosschain tx");
@@ -270,22 +184,20 @@ namespace CrossChainContract
                 args = args,
 
                 txHash = tx.Hash,
-                //sha256(此合约地址, 交易id)
                 crossChainID = SmartContract.Sha256(ExecutionEngine.ExecutingScriptHash.Concat(tx.Hash)),
                 fromContract = caller
             };
             var requestId = getRequestID(toChainID);
             var resquestKey = putRequest(toChainID, requestId, para);
 
-            //发出跨链事件
-            CrossChainEvent(tx.Hash, para.txHash, caller , para.toChainID, para.toContract, WriteCrossChainTxParameter(para), resquestKey);
+            //event
+            CrossChainLockEvent(caller, para.fromContract, toChainID, resquestKey, para.args);
             return true;
         }
 
         public static bool SyncBlockHeader(byte[] rawHeader, byte[] bookKeeper, byte[] signList)
         {
             Header header = deserializHeader(rawHeader);
-            //普通区块
             if (header.nextBookKeeper != new Byte[] { })
             {
                 Runtime.Notify("Header nextBookKeeper should be empty");
@@ -303,7 +215,7 @@ namespace CrossChainContract
             {
                 targetBlockHeight = latestBookKeeperHeight;
             }
-            else if (header.height == latestBookKeeperHeight) 
+            else if (header.height == latestBookKeeperHeight)
             {
                 return true;
             }
@@ -363,33 +275,27 @@ namespace CrossChainContract
                 Runtime.Notify("NextBookers illegal");
                 return false;
             }
-            //更新最新区块高度
             Storage.Put(latestHeightPrefix, header.height);
-            //更新共识公钥高度
             Storage.Put(latestBookKeeperHeightPrefix, header.height);
-            //存放完整区块头
             Storage.Put(mCBlockHeadersPrefix.Concat(header.height.AsByteArray()), rawHeader);
-            //更新关键区块头高度
             Map<BigInteger, BigInteger> MCKeeperHeight = (Map<BigInteger, BigInteger>)Storage.Get(mCKeeperHeightPrefix).Deserialize();
             MCKeeperHeight[MCKeeperHeight.Keys.Length] = header.height;
             MCKeeperHeight = RemoveOutdateHeight(MCKeeperHeight);
             Storage.Put(mCKeeperHeightPrefix, MCKeeperHeight.Serialize());
-            //更新关键区块头公钥
             Storage.Put(mCKeeperPubKeysPrefix.Concat(header.height.AsByteArray()), bookKeeper.keepers.Serialize());
-            //触发关键区块头事件
             ChangeBookKeeperEvent(header.height, rawHeader);
             return true;
         }
 
-        private static Map<BigInteger, BigInteger> RemoveOutdateHeight(Map<BigInteger, BigInteger> MCKeeperHeight) 
+        private static Map<BigInteger, BigInteger> RemoveOutdateHeight(Map<BigInteger, BigInteger> MCKeeperHeight)
         {
-            foreach (BigInteger key in MCKeeperHeight.Keys) 
+            foreach (BigInteger key in MCKeeperHeight.Keys)
             {
                 if (MCKeeperHeight.Keys.Length > 10)
                 {
                     MCKeeperHeight.Remove(key);
                 }
-                else 
+                else
                 {
                     break;
                 }
@@ -414,21 +320,14 @@ namespace CrossChainContract
             {
                 Runtime.Notify("NextBookers illegal");
             }
-            //更新最新区块高度
             Storage.Put(latestHeightPrefix, header.height);
-            //更新共识公钥高度
             Storage.Put(latestBookKeeperHeightPrefix, header.height);
-            //更新创世块创建状态 TODO:上线可切换为0
             Storage.Put("IsInitGenesisBlock", 1);
-            //存放完整区块头
             Storage.Put(mCBlockHeadersPrefix.Concat(header.height.AsByteArray()), rawHeader);
-            //存放关键区块头高度
             Map<BigInteger, BigInteger> MCKeeperHeight = new Map<BigInteger, BigInteger>();
             MCKeeperHeight[0] = header.height;
             Storage.Put(mCKeeperHeightPrefix, MCKeeperHeight.Serialize());
-            //存放关键区块头公钥
             Storage.Put(mCKeeperPubKeysPrefix.Concat(header.height.AsByteArray()), bookKeeper.keepers.Serialize());
-            //触发创世区块事件
             InitGenesisBlockEvent(header.height, rawHeader);
             return true;
         }
@@ -449,7 +348,7 @@ namespace CrossChainContract
                 }
                 else
                 {
-                    return MCKeeperHeight[i+1];
+                    return MCKeeperHeight[i + 1];
                 }
             }
             return 0;
@@ -558,38 +457,38 @@ namespace CrossChainContract
         {
             Header header = new Header();
             int offset = 0;
-            //获取version
+            //get version
             header.version = Source.Range(offset, 4).ToBigInteger();
             offset += 4;
-            //获取chainID
+            //get chainID
             header.chainId = Source.Range(offset, 8).ToBigInteger();
             offset += 8;
-            //获取prevBlockHash, Hash
+            //get prevBlockHash, Hash
             header.prevBlockHash = ReadHash(Source, offset);
             offset += 32;
-            //获取transactionRoot, Hash
+            //get transactionRoot, Hash
             header.transactionRoot = ReadHash(Source, offset);
             offset += 32;
-            //获取crossStatesRoot, Hash
+            //get crossStatesRoot, Hash
             header.crossStatesRoot = ReadHash(Source, offset);
             offset += 32;
-            //获取blockRoot, Hash
+            //get blockRoot, Hash
             header.blockRoot = ReadHash(Source, offset);
             offset += 32;
-            //获取timeStamp,uint32
+            //get timeStamp,uint32
             header.timeStamp = Source.Range(offset, 4).ToBigInteger();
             offset += 4;
-            //获取height
+            //get height
             header.height = Source.Range(offset, 4).ToBigInteger();
             offset += 4;
-            //获取consensusData
+            //get consensusData
             header.ConsensusData = Source.Range(offset, 8).ToBigInteger();
             offset += 8;
-            //获取consensysPayload
+            //get consensysPayload
             var temp = ReadVarBytes(Source, offset);
             header.consensusPayload = (byte[])temp[0];
             offset = (int)temp[1];
-            //获取nextBookKeeper
+            //get nextBookKeeper
             header.nextBookKeeper = Source.Range(offset, 20);
 
             return header;
@@ -600,7 +499,7 @@ namespace CrossChainContract
             if (value.TxParam.toContract.Length == 20)
             {
                 DyncCall TargetContract = (DyncCall)value.TxParam.toContract.ToDelegate();
-                object[] parameter = new object[] { value.TxParam.args,  value.TxParam.fromContract, value.fromChainID};
+                object[] parameter = new object[] { value.TxParam.args, value.TxParam.fromContract, value.fromChainID };
                 if (TargetContract(value.TxParam.method.AsString(), parameter) is null)
                 {
                     return false;
@@ -642,16 +541,16 @@ namespace CrossChainContract
             ToMerkleValue result = new ToMerkleValue();
             int offset = 0;
 
-            //获取txHash
+            //get txHash
             var temp = ReadVarBytes(Source, offset);
             result.txHash = (byte[])temp[0];
             offset = (int)temp[1];
 
-            //获取fromChainID, Uint64
+            //get fromChainID, Uint64
             result.fromChainID = Source.Range(offset, 8).ToBigInteger();
             offset = offset + 8;
 
-            //获取CrossChainTxParameter
+            //get CrossChainTxParameter
             result.TxParam = deserializCrossChainTxParameter(Source, offset);
             return result;
         }
@@ -659,36 +558,36 @@ namespace CrossChainContract
         private static CrossChainTxParameter deserializCrossChainTxParameter(byte[] Source, int offset)
         {
             CrossChainTxParameter txParameter = new CrossChainTxParameter();
-            //获取txHash
+            //get txHash
             var temp = ReadVarBytes(Source, offset);
             txParameter.txHash = (byte[])temp[0];
             offset = (int)temp[1];
 
-            //获取crossChainId
+            //get crossChainId
             temp = ReadVarBytes(Source, offset);
             txParameter.crossChainID = (byte[])temp[0];
             offset = (int)temp[1];
 
-            //获取fromContract
+            //get fromContract
             temp = ReadVarBytes(Source, offset);
             txParameter.fromContract = (byte[])temp[0];
             offset = (int)temp[1];
 
-            //获取toChainID
+            //get toChainID
             txParameter.toChainID = Source.Range(offset, 8).ToBigInteger();
             offset = offset + 8;
 
-            //获取toContract
+            //get toContract
             temp = ReadVarBytes(Source, offset);
             txParameter.toContract = (byte[])temp[0];
             offset = (int)temp[1];
 
-            //获取method
+            //get method
             temp = ReadVarBytes(Source, offset);
             txParameter.method = (byte[])temp[0];
             offset = (int)temp[1];
 
-            //获取参数
+            //get params
             temp = ReadVarBytes(Source, offset);
             txParameter.args = (byte[])temp[0];
             offset = (int)temp[1];
@@ -702,7 +601,6 @@ namespace CrossChainContract
             result = WriteVarBytes(result, para.txHash);
             result = WriteVarBytes(result, para.crossChainID);
             result = WriteVarBytes(result, para.fromContract);
-            //write Uint64
             byte[] toChainIDBytes = PadRight(para.toChainID.AsByteArray(), 8);
             result = result.Concat(toChainIDBytes);
             result = WriteVarBytes(result, para.toContract);
@@ -782,33 +680,34 @@ namespace CrossChainContract
             return WriteVarInt(Target.Length, Source).Concat(Target);
         }
 
-        private static byte[] WriteVarInt(BigInteger value, byte[] Source)
+        private static byte[] WriteVarInt(BigInteger value, byte[] source)
         {
             if (value < 0)
             {
-                return Source;
+                return source;
             }
             else if (value < 0xFD)
             {
-                return Source.Concat(value.ToByteArray());
+                var v = PadRight(value.ToByteArray(), 1);
+                return source.Concat(v);
             }
             else if (value <= 0xFFFF) // 0xff, need to pad 1 0x00
             {
                 byte[] length = new byte[] { 0xFD };
                 var v = PadRight(value.ToByteArray(), 2);
-                return Source.Concat(length).Concat(v);
+                return source.Concat(length).Concat(v);
             }
             else if (value <= 0XFFFFFFFF) //0xffffff, need to pad 1 0x00 
             {
                 byte[] length = new byte[] { 0xFE };
                 var v = PadRight(value.ToByteArray(), 4);
-                return Source.Concat(length).Concat(v);
+                return source.Concat(length).Concat(v);
             }
             else //0x ff ff ff ff ff, need to pad 3 0x00
             {
                 byte[] length = new byte[] { 0xFF };
                 var v = PadRight(value.ToByteArray(), 8);
-                return Source.Concat(length).Concat(v);
+                return source.Concat(length).Concat(v);
             }
         }
 
@@ -863,7 +762,9 @@ namespace CrossChainContract
         {
             var l = value.Length;
             if (l > length)
-                return value;
+            {
+                value = value.Take(length);
+            }
             for (int i = 0; i < length - l; i++)
             {
                 value = value.Concat(new byte[] { 0x00 });
@@ -937,6 +838,4 @@ namespace CrossChainContract
         public byte[] nextBookKeeper;
         public byte[][] keepers;
     }
-
-
 }
