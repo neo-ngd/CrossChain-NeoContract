@@ -15,9 +15,7 @@ namespace CrossChainContract
         //Header prefix
         private static readonly byte[] latestHeightPrefix = new byte[] { 0x02, 0x01 };
         private static readonly byte[] mCBlockHeadersPrefix = new byte[] { 0x02, 0x02 };
-        private static readonly byte[] latestBookKeeperHeightPrefix = new byte[] { 0x02, 0x03 };
         private static readonly byte[] mCKeeperPubKeysPrefix = new byte[] { 0x02, 0x04 };
-        private static readonly byte[] mCKeeperHeightPrefix = new byte[] { 0x02, 0x05 };
 
         //tx prefix
         private static readonly byte[] transactionPrefix = new byte[] { 0x03, 0x01 };
@@ -25,7 +23,6 @@ namespace CrossChainContract
         //constant
         private static readonly int MCCHAIN_PUBKEY_LEN = 67;
         private static readonly int MCCHAIN_SIGNATURE_LEN = 65;
-        private static readonly byte[] Operator = "ALsa2JWWsKiMuqZkCpKvZx2iSoBXjNdpZo".ToScriptHash();
 
         //动态调用
         delegate object DyncCall(string method, object[] args);
@@ -209,22 +206,7 @@ namespace CrossChainContract
                 return false;
             }
             byte[][] keepers;
-            BigInteger latestBookKeeperHeight = Storage.Get(latestBookKeeperHeightPrefix).ToBigInteger();
-            BigInteger targetBlockHeight;
-            if (header.height > latestBookKeeperHeight)
-            {
-                targetBlockHeight = latestBookKeeperHeight;
-            }
-            else if (header.height == latestBookKeeperHeight)
-            {
-                return true;
-            }
-            else
-            {
-                Map<BigInteger, BigInteger> MCKeeperHeight = new Map<BigInteger, BigInteger>();
-                targetBlockHeight = findBookKeeper(MCKeeperHeight.Keys.Length, header.height);
-            }
-            keepers = (byte[][])Storage.Get(mCKeeperPubKeysPrefix.Concat(targetBlockHeight.AsByteArray())).Deserialize();
+            keepers = (byte[][])Storage.Get(mCKeeperPubKeysPrefix).Deserialize();
             int n = keepers.Length;
             int m = n - (n - 1) / 3;
             if (!verifySig(rawHeader, signList, keepers, m))
@@ -259,9 +241,7 @@ namespace CrossChainContract
                 Runtime.Notify("The nextBookKeeper of header is illegal");
                 return false;
             }
-
-            BigInteger latestBookKeeperHeight = Storage.Get(latestBookKeeperHeightPrefix).Concat(new byte[] { 0x00 }).AsBigInteger();
-            byte[][] keepers = (byte[][])Storage.Get(mCKeeperPubKeysPrefix.Concat(latestBookKeeperHeight.AsByteArray())).Deserialize();
+            byte[][] keepers = (byte[][])Storage.Get(mCKeeperPubKeysPrefix).Deserialize();
             int n = keepers.Length;
             int m = n - (n - 1) / 3;
             if (!verifySig(rawHeader, signList, keepers, m))
@@ -276,33 +256,11 @@ namespace CrossChainContract
                 return false;
             }
             Storage.Put(latestHeightPrefix, header.height);
-            Storage.Put(latestBookKeeperHeightPrefix, header.height);
-            Storage.Put(mCBlockHeadersPrefix.Concat(header.height.AsByteArray()), rawHeader);
-            Map<BigInteger, BigInteger> MCKeeperHeight = (Map<BigInteger, BigInteger>)Storage.Get(mCKeeperHeightPrefix).Deserialize();
-            MCKeeperHeight[MCKeeperHeight.Keys.Length] = header.height;
-            MCKeeperHeight = RemoveOutdateHeight(MCKeeperHeight);
-            Storage.Put(mCKeeperHeightPrefix, MCKeeperHeight.Serialize());
-            Storage.Put(mCKeeperPubKeysPrefix.Concat(header.height.AsByteArray()), bookKeeper.keepers.Serialize());
+            Storage.Put(mCBlockHeadersPrefix, rawHeader);
+            Storage.Put(mCKeeperPubKeysPrefix, bookKeeper.keepers.Serialize());
             ChangeBookKeeperEvent(header.height, rawHeader);
             return true;
         }
-
-        private static Map<BigInteger, BigInteger> RemoveOutdateHeight(Map<BigInteger, BigInteger> MCKeeperHeight)
-        {
-            foreach (BigInteger key in MCKeeperHeight.Keys)
-            {
-                if (MCKeeperHeight.Keys.Length > 10)
-                {
-                    MCKeeperHeight.Remove(key);
-                }
-                else
-                {
-                    break;
-                }
-            }
-            return MCKeeperHeight;
-        }
-
 
         public static bool InitGenesisBlock(byte[] rawHeader, byte[] pubKeyList)
         {
@@ -321,37 +279,12 @@ namespace CrossChainContract
                 Runtime.Notify("NextBookers illegal");
             }
             Storage.Put(latestHeightPrefix, header.height);
-            Storage.Put(latestBookKeeperHeightPrefix, header.height);
             Storage.Put("IsInitGenesisBlock", 1);
-            Storage.Put(mCBlockHeadersPrefix.Concat(header.height.AsByteArray()), rawHeader);
+            Storage.Put(mCBlockHeadersPrefix, rawHeader);
             Map<BigInteger, BigInteger> MCKeeperHeight = new Map<BigInteger, BigInteger>();
-            MCKeeperHeight[0] = header.height;
-            Storage.Put(mCKeeperHeightPrefix, MCKeeperHeight.Serialize());
-            Storage.Put(mCKeeperPubKeysPrefix.Concat(header.height.AsByteArray()), bookKeeper.keepers.Serialize());
+            Storage.Put(mCKeeperPubKeysPrefix, bookKeeper.keepers.Serialize());
             InitGenesisBlockEvent(header.height, rawHeader);
             return true;
-        }
-
-        private static BigInteger findBookKeeper(int mcKeeperHeightLength, BigInteger height)
-        {
-            if (mcKeeperHeightLength == 1)
-            {
-                return 0;
-            }
-            Map<BigInteger, BigInteger> MCKeeperHeight = new Map<BigInteger, BigInteger>();
-            MCKeeperHeight = (Map<BigInteger, BigInteger>)Storage.Get(mCKeeperHeightPrefix).Deserialize();
-            for (int i = mcKeeperHeightLength; i >= 0; i--)
-            {
-                if (MCKeeperHeight[i] > height)
-                {
-                    continue;
-                }
-                else
-                {
-                    return MCKeeperHeight[i + 1];
-                }
-            }
-            return 0;
         }
 
         private static BookKeeper verifyPubkey(byte[] pubKeyList)
@@ -653,21 +586,6 @@ namespace CrossChainContract
         {
             byte[] prefix = { 0x00 };
             return SmartContract.Sha256(prefix.Concat(value));
-        }
-
-        public static object[] DeserializeArgs(byte[] buffer)
-        {
-            var offset = 0;
-            var res = ReadVarBytes(buffer, offset);
-            var assetAddress = res[0];
-
-            res = ReadVarBytes(buffer, (int)res[1]);
-            var toAddress = res[0];
-
-            res = ReadVarInt(buffer, (int)res[1]);
-            var amount = res[0];
-
-            return new object[] { assetAddress, toAddress, amount };
         }
 
         private static byte[] WriteUint16(BigInteger value, byte[] Source)
