@@ -13,8 +13,8 @@ namespace CrossChainContract
         private static readonly byte[] requestPreifx = new byte[] { 0x01, 0x02 };
 
         //Header prefix
-        private static readonly byte[] latestHeightPrefix = new byte[] { 0x02, 0x01 };
-        private static readonly byte[] mCBlockHeadersPrefix = new byte[] { 0x02, 0x02 };
+        private static readonly byte[] currentEpochHeightPrefix = new byte[] { 0x02, 0x01 };
+        //private static readonly byte[] mCBlockHeadersPrefix = new byte[] { 0x02, 0x02 };
         private static readonly byte[] mCKeeperPubKeysPrefix = new byte[] { 0x02, 0x04 };
 
         //tx prefix
@@ -45,10 +45,6 @@ namespace CrossChainContract
             {
                 return CrossChain((BigInteger)args[0], (byte[])args[1], (byte[])args[2], (byte[])args[3], caller);
             }
-            else if (operation == "SyncBlockHeader") //同步区块头
-            {
-                return SyncBlockHeader((byte[])args[0], (byte[])args[1], (byte[])args[2]);
-            }
             else if (operation == "ChangeBookKeeper") // 更新关键区块头公钥
             {
                 return ChangeBookKeeper((byte[])args[0], (byte[])args[1], (byte[])args[2]);
@@ -59,15 +55,11 @@ namespace CrossChainContract
             }
             else if (operation == "VerifyAndExecuteTx")// 执行跨链交易
             {
-                return VerifyAndExecuteTx((byte[])args[0], (BigInteger)args[1]);
+                return VerifyAndExecuteTx((byte[])args[0], (byte[])args[1], (byte[])args[2], (byte[])args[3], (byte[])args[4]);
             }
             else if (operation == "currentSyncHeight")
             {
-                return Storage.Get(latestHeightPrefix).AsBigInteger();
-            }
-            else if (operation == "getHeader")
-            {
-                return getHeader((BigInteger)args[0]);
+                return Storage.Get(currentEpochHeightPrefix).AsBigInteger();
             }
             else if (operation == "VerifyAndExecuteTxTest")
             {
@@ -76,49 +68,48 @@ namespace CrossChainContract
             return false;
         }
 
-        private static byte[] getHeader(BigInteger blockHeight)
+        public static bool VerifyAndExecuteTx(byte[] proof, byte[] RawHeader, byte[] headerProof,byte[] currentRawHeader, byte[] signList)
         {
-            byte[] rawHeader = Storage.Get(mCBlockHeadersPrefix.Concat(blockHeight.ToByteArray()));
-            if (rawHeader.Equals(new byte[0]))
+            Header txheader = deserializHeader(RawHeader);           
+            byte[][] keepers = (byte[][])Storage.Get(mCKeeperPubKeysPrefix).Deserialize();
+            int n = keepers.Length;
+            int m = n - (n - 1) / 3;
+            BigInteger currentEpochHeight = Storage.Get(currentEpochHeightPrefix).Concat(new byte[] { 0x00 }).AsBigInteger();
+            byte[] StateRootValue = new byte[] { 0x00 };
+            if (txheader.height >= currentEpochHeight)
             {
-                return new byte[] { 0x00 };
+                if (!verifySig(RawHeader, signList, keepers, m))
+                {
+                    Runtime.Notify("Verify RawHeader signature failed!");
+                    return false;
+                }
             }
             else
             {
-                return rawHeader;
+                if (!verifySig(currentRawHeader, signList, keepers, m))
+                {
+                    Runtime.Notify("Verify currentRawHeader signature failed!");
+                    return false;
+                }
+                Header currentHeader = deserializHeader(currentRawHeader);
+                StateRootValue = MerkleProve(headerProof, currentHeader.blockRoot);                
+                byte[] RawHeaderHash = Sha256(RawHeader);
+                if (!StateRootValue.Equals(RawHeaderHash))                
+                {
+                    Runtime.Notify("Verify block proof signature failed!");
+                    return false;
+                }
             }
-        }
-
-        public static bool VerifyAndExecuteTx(byte[] proof, BigInteger blockHeight)
-        {
-            BigInteger latestHeight = Storage.Get(latestHeightPrefix).AsBigInteger();
-            if (blockHeight > latestHeight)
+            // Through rawHeader.CrossStateRoot, the toMerkleValue or cross chain msg can be verified and parsed from proof
+            StateRootValue = MerkleProve(proof, txheader.crossStatesRoot);
+            if (StateRootValue.Equals(new byte[] { 0x00 }))
             {
-                Runtime.Notify("blockHeight > LatestHeight!");
+                Runtime.Notify("cross chain Proof verify error");
                 return false;
             }
-            //get root by height
-            byte[] rawHeader = getHeader(blockHeight);
-            Header header;
-            if (!rawHeader.Equals(new byte[] { 0x00 }))
-            {
-                header = deserializHeader(rawHeader);
-            }
-            else
-            {
-                Runtime.Notify("Header does not exist.");
-                return false;
-            }
-            // verify toMerkleValue
-            byte[] CrossChainParams = MerkleProve(proof, header.crossStatesRoot);
-            if (CrossChainParams.Equals(new byte[] { 0x00 }))
-            {
-                Runtime.Notify("Proof verify error");
-                return false;
-            }
-            ToMerkleValue merkleValue = deserializMerkleValue(CrossChainParams);
+            ToMerkleValue merkleValue = deserializMerkleValue(StateRootValue);
             //check by txid
-            if (Storage.Get(transactionPrefix.Concat(merkleValue.txHash)).AsBigInteger() == 1)
+            if (Storage.Get(transactionPrefix.Concat(merkleValue.fromChainID.AsByteArray()).Concat(merkleValue.txHash)).AsBigInteger() == 1)
             {
                 Runtime.Notify("Transaction has been executed");
                 return false;
@@ -137,11 +128,11 @@ namespace CrossChainContract
             else
             {
                 Runtime.Notify("Tx execute fail");
+                return false;
             }
 
             //event
             CrossChainUnlockEvent(merkleValue.fromChainID, merkleValue.TxParam.toContract, merkleValue.txHash);
-
             return true;
         }
 
@@ -192,7 +183,7 @@ namespace CrossChainContract
             return true;
         }
 
-        public static bool SyncBlockHeader(byte[] rawHeader, byte[] bookKeeper, byte[] signList)
+        public static bool SyncBlockHeader(byte[] rawHeader, byte[] signList)
         {
             Header header = deserializHeader(rawHeader);
             if (header.nextBookKeeper != new Byte[] { })
@@ -214,10 +205,9 @@ namespace CrossChainContract
                 Runtime.Notify("Verify header signature failed!");
                 return false;
             }
-            Storage.Put(mCBlockHeadersPrefix.Concat(header.height.AsByteArray()), rawHeader);
-            if (header.height > Storage.Get(latestHeightPrefix).ToBigInteger())
+            if (header.height > Storage.Get(currentEpochHeightPrefix).ToBigInteger())
             {
-                Storage.Put(latestHeightPrefix, header.height);
+                Storage.Put(currentEpochHeightPrefix, header.height);
             }
             SyncBlockHeaderEvent(header.height, rawHeader);
             return true;
@@ -230,7 +220,7 @@ namespace CrossChainContract
             {
                 return InitGenesisBlock(rawHeader, pubKeyList);
             }
-            BigInteger latestHeight = Storage.Get(latestHeightPrefix).Concat(new byte[] { 0x00 }).AsBigInteger();
+            BigInteger latestHeight = Storage.Get(currentEpochHeightPrefix).Concat(new byte[] { 0x00 }).AsBigInteger();
             if (latestHeight > header.height)
             {
                 Runtime.Notify("The height of header illegal");
@@ -255,8 +245,7 @@ namespace CrossChainContract
                 Runtime.Notify("NextBookers illegal");
                 return false;
             }
-            Storage.Put(latestHeightPrefix, header.height);
-            Storage.Put(mCBlockHeadersPrefix, rawHeader);
+            Storage.Put(currentEpochHeightPrefix, header.height);
             Storage.Put(mCKeeperPubKeysPrefix, bookKeeper.keepers.Serialize());
             ChangeBookKeeperEvent(header.height, rawHeader);
             return true;
@@ -278,9 +267,8 @@ namespace CrossChainContract
             {
                 Runtime.Notify("NextBookers illegal");
             }
-            Storage.Put(latestHeightPrefix, header.height);
+            Storage.Put(currentEpochHeightPrefix, header.height);
             Storage.Put("IsInitGenesisBlock", 1);
-            Storage.Put(mCBlockHeadersPrefix, rawHeader);
             Map<BigInteger, BigInteger> MCKeeperHeight = new Map<BigInteger, BigInteger>();
             Storage.Put(mCKeeperPubKeysPrefix, bookKeeper.keepers.Serialize());
             InitGenesisBlockEvent(header.height, rawHeader);
@@ -439,7 +427,7 @@ namespace CrossChainContract
                 }
                 else
                 {
-                    Storage.Put(transactionPrefix.Concat(value.txHash), 1);
+                    Storage.Put(transactionPrefix.Concat(value.fromChainID.AsByteArray()).Concat(value.txHash), 1);
                     return true;
                 }
             }
@@ -741,9 +729,9 @@ namespace CrossChainContract
         public BigInteger version;//uint32
         public BigInteger chainId;//uint64
         public byte[] prevBlockHash;//Hash
-        public byte[] transactionRoot;//Hash
-        public byte[] crossStatesRoot;//Hash
-        public byte[] blockRoot;//Hash
+        public byte[] transactionRoot;//Hash  无用
+        public byte[] crossStatesRoot;//Hash  用来验证跨链交易
+        public byte[] blockRoot;//Hash 用来验证header
         public BigInteger timeStamp;//uint32
         public BigInteger height;//uint32
         public BigInteger ConsensusData;//uint64
