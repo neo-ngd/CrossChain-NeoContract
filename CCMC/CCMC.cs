@@ -183,36 +183,6 @@ namespace CrossChainContract
             return true;
         }
 
-        public static bool SyncBlockHeader(byte[] rawHeader, byte[] signList)
-        {
-            Header header = deserializHeader(rawHeader);
-            if (header.nextBookKeeper != new Byte[] { })
-            {
-                Runtime.Notify("Header nextBookKeeper should be empty");
-                return false;
-            }
-            if (header.height < 0)
-            {
-                Runtime.Notify("block height should > 0");
-                return false;
-            }
-            byte[][] keepers;
-            keepers = (byte[][])Storage.Get(mCKeeperPubKeysPrefix).Deserialize();
-            int n = keepers.Length;
-            int m = n - (n - 1) / 3;
-            if (!verifySig(rawHeader, signList, keepers, m))
-            {
-                Runtime.Notify("Verify header signature failed!");
-                return false;
-            }
-            if (header.height > Storage.Get(currentEpochHeightPrefix).ToBigInteger())
-            {
-                Storage.Put(currentEpochHeightPrefix, header.height);
-            }
-            SyncBlockHeaderEvent(header.height, rawHeader);
-            return true;
-        }
-
         public static bool ChangeBookKeeper(byte[] rawHeader, byte[] pubKeyList, byte[] signList)
         {
             Header header = deserializHeader(rawHeader);
