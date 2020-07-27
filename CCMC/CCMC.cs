@@ -93,7 +93,7 @@ namespace CrossChainContract
                 }
                 Header currentHeader = deserializHeader(currentRawHeader);
                 StateRootValue = MerkleProve(headerProof, currentHeader.blockRoot);                
-                byte[] RawHeaderHash = Sha256(RawHeader);
+                byte[] RawHeaderHash = Hash256(RawHeader);
                 if (!StateRootValue.Equals(RawHeaderHash))                
                 {
                     Runtime.Notify("Verify block proof signature failed!");
