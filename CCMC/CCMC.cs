@@ -522,8 +522,10 @@ namespace CrossChainContract
                     signer = SmartContract.Sha256(Ecrecover(r, s, true, SmartContract.Sha256(hash)));
                 }
                 Runtime.Notify(signer);
-                if (containsAddress(keepers, signer))
+                int result = containsAddress(keepers, signer);
+                if (result >= 0)
                 {
+                    keepers[result] = new byte[] { 0x00 };
                     signed += 1;
                 }
             }
@@ -531,16 +533,16 @@ namespace CrossChainContract
             return signed >= m;
         }
 
-        private static bool containsAddress(object[] keepers, byte[] pubkey)
+        private static int containsAddress(object[] keepers, byte[] pubkey)
         {
             for (int i = 0; i < keepers.Length; i++)
             {
                 if (((byte[])keepers[i]).Equals(pubkey))
                 {
-                    return true;
+                    return i;
                 }
             }
-            return false;
+            return -1;
         }
 
         private static BigInteger IsGenesised()
